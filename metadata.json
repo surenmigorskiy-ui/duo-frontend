@@ -1,0 +1,7 @@
+{
+  "name": "Duo Finance",
+  "description": "An application to automate personal and family expense tracking and planning. It helps users understand where their money goes, set priorities, and plan for financial goals using AI-powered receipt recognition.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
