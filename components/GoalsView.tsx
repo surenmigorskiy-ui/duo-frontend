@@ -33,11 +33,11 @@ const GoalsContent: React.FC<Pick<GoalsViewProps, 'goals' | 'onAddGoal' | 'onDel
 
     useEffect(() => {
         const handleScroll = () => {
-            if (expandedId) setExpandedId(null);
+            setExpandedId(prev => (prev ? null : prev));
         };
-        window.addEventListener('scroll', handleScroll, true); // Use capture phase
+        window.addEventListener('scroll', handleScroll, true);
         return () => window.removeEventListener('scroll', handleScroll, true);
-    }, [expandedId]);
+    }, []);
 
     const filteredGoals = useMemo(() => {
         return goals.filter(g => userFilter === 'all' || g.user === userFilter);
@@ -64,12 +64,29 @@ const GoalsContent: React.FC<Pick<GoalsViewProps, 'goals' | 'onAddGoal' | 'onDel
     const GoalItem: React.FC<{ item: Goal, isExpanded: boolean, onExpand: () => void }> = ({ item, isExpanded, onExpand }) => {
         const categoryInfo = GOAL_CATEGORIES.find(c => c.name === item.category);
         const itemRef = useRef<HTMLLIElement>(null);
+        const spoilerContentRef = useRef<HTMLDivElement>(null);
+        const [spoilerHeight, setSpoilerHeight] = useState(0);
 
         useEffect(() => {
             if (isExpanded) {
                 setTimeout(() => {
                     itemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }, 100);
+            }
+        }, [isExpanded]);
+
+        useEffect(() => {
+            const el = spoilerContentRef.current;
+            if (!el) return;
+
+            const updateHeight = () => setSpoilerHeight(el.scrollHeight);
+
+            if (isExpanded) {
+                updateHeight();
+                window.addEventListener('resize', updateHeight);
+                return () => window.removeEventListener('resize', updateHeight);
+            } else {
+                setSpoilerHeight(0);
             }
         }, [isExpanded]);
 
@@ -92,8 +109,11 @@ const GoalsContent: React.FC<Pick<GoalsViewProps, 'goals' | 'onAddGoal' | 'onDel
                         </div>
                     </div>
                 </div>
-                <div className={`spoiler ${isExpanded ? 'expanded' : ''}`}>
-                    <div className="px-4">
+                <div 
+                    className={`spoiler ${isExpanded ? 'expanded' : ''}`}
+                    style={{ maxHeight: `${spoilerHeight}px` }}
+                >
+                    <div ref={spoilerContentRef} className="px-4">
                         <div className="text-xs text-gray-400 dark:text-gray-500 space-y-2 pl-14">
                             <p className="whitespace-normal font-semibold text-gray-500 dark:text-gray-400">{item.description}</p>
                             <p><span className="font-semibold w-24 inline-block">Приоритет:</span> {GOAL_PRIORITY_DETAILS[item.priority].label}</p>
@@ -214,6 +234,14 @@ const PlannedExpensesContent: React.FC<Pick<GoalsViewProps, 'plannedExpenses' | 
     const [isAdding, setIsAdding] = useState(false);
     const [userFilter, setUserFilter] = useState<User | 'all'>('all');
 
+    useEffect(() => {
+        const handleScroll = () => {
+            setExpandedId(prev => (prev ? null : prev));
+        };
+        window.addEventListener('scroll', handleScroll, true);
+        return () => window.removeEventListener('scroll', handleScroll, true);
+    }, []);
+
      const filteredPlannedExpenses = useMemo(() => {
         return plannedExpenses.filter(p => userFilter === 'all' || p.user === userFilter);
     }, [plannedExpenses, userFilter]);
@@ -238,12 +266,29 @@ const PlannedExpensesContent: React.FC<Pick<GoalsViewProps, 'plannedExpenses' | 
     const PlannedExpenseItem: React.FC<{ item: PlannedExpense, isExpanded: boolean, onExpand: () => void }> = ({ item, isExpanded, onExpand }) => {
         const categoryInfo = DEFAULT_CATEGORIES.find(c => c.name === item.category);
         const itemRef = useRef<HTMLLIElement>(null);
+        const spoilerContentRef = useRef<HTMLDivElement>(null);
+        const [spoilerHeight, setSpoilerHeight] = useState(0);
 
         useEffect(() => {
             if (isExpanded) {
                  setTimeout(() => {
                     itemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }, 100);
+            }
+        }, [isExpanded]);
+
+        useEffect(() => {
+            const el = spoilerContentRef.current;
+            if (!el) return;
+
+            const updateHeight = () => setSpoilerHeight(el.scrollHeight);
+
+            if (isExpanded) {
+                updateHeight();
+                window.addEventListener('resize', updateHeight);
+                return () => window.removeEventListener('resize', updateHeight);
+            } else {
+                setSpoilerHeight(0);
             }
         }, [isExpanded]);
 
@@ -268,8 +313,11 @@ const PlannedExpensesContent: React.FC<Pick<GoalsViewProps, 'plannedExpenses' | 
                         <i className={`fas fa-chevron-down text-xs text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}></i>
                     </div>
                 </div>
-                <div className={`spoiler ${isExpanded ? 'expanded' : ''}`}>
-                     <div className="px-4">
+                <div 
+                    className={`spoiler ${isExpanded ? 'expanded' : ''}`}
+                    style={{ maxHeight: `${spoilerHeight}px` }}
+                >
+                     <div ref={spoilerContentRef} className="px-4">
                         <div className="text-xs text-gray-400 dark:text-gray-500 space-y-2 pl-14">
                             <p className="whitespace-normal font-semibold text-gray-500 dark:text-gray-400">{item.description}</p>
                             <p><span className="font-semibold w-24 inline-block">Категория:</span> {item.category}</p>

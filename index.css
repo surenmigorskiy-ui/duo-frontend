@@ -1,0 +1,18 @@
+/* Global styles for Duo Finance */
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+.spoiler {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+  will-change: max-height, opacity;
+}
+
+.spoiler.expanded {
+  opacity: 1;
+}
+

@@ -34,10 +34,27 @@ const TransactionItem: React.FC<{
     const subCategoryInfo = categoryInfo?.subCategories?.find(sc => sc.name === transaction.subCategory);
     const icon = subCategoryInfo?.icon || categoryInfo?.icon || 'fas fa-question-circle';
     const userInfo = userDetails[transaction.user];
+    const spoilerContentRef = useRef<HTMLDivElement>(null);
+    const [spoilerHeight, setSpoilerHeight] = useState(0);
     
     const priorityColorClass = isExpense ? (transaction.priority === 'must-have' ? 'bg-orange-400' : 'bg-yellow-400') : '';
     const amountColor = isExpense ? 'text-red-500' : 'text-green-500';
     const amountPrefix = isExpense ? '-' : '+';
+
+    useEffect(() => {
+        const el = spoilerContentRef.current;
+        if (!el) return;
+
+        const updateHeight = () => setSpoilerHeight(el.scrollHeight);
+
+        if (isExpanded) {
+            updateHeight();
+            window.addEventListener('resize', updateHeight);
+            return () => window.removeEventListener('resize', updateHeight);
+        } else {
+            setSpoilerHeight(0);
+        }
+    }, [isExpanded]);
 
     return (
         <li className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
@@ -57,8 +74,11 @@ const TransactionItem: React.FC<{
                         <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{new Date(transaction.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                 </div>
-                <div className={`spoiler ${isExpanded ? 'expanded' : ''}`}>
-                    <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
+                <div 
+                    className={`spoiler ${isExpanded ? 'expanded' : ''}`}
+                    style={{ maxHeight: `${spoilerHeight}px` }}
+                >
+                    <div ref={spoilerContentRef} className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
                          <div className="text-xs text-gray-400 dark:text-gray-500 space-y-2 pl-14">
                             <p><span className="font-semibold w-24 inline-block">Категория:</span> {transaction.category}</p>
                             {transaction.subCategory && <p><span className="font-semibold w-24 inline-block">Подкатегория:</span> {transaction.subCategory}</p>}
@@ -153,6 +173,14 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
+    }, []);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            setExpandedId(prev => (prev ? null : prev));
+        };
+        window.addEventListener('scroll', handleScroll, true);
+        return () => window.removeEventListener('scroll', handleScroll, true);
     }, []);
 
     const handleUserToggle = (user: User) => {

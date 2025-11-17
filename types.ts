@@ -89,7 +89,7 @@ export interface DashboardLayoutItem {
     visible: boolean;
 }
 
-export type UserDetails = { [key in User]: { name: string; color: string; avatar: string } };
+export type UserDetails = { [key in User]: { name: string; color: string; avatar: string; photoUrl?: string } };
 
 export interface Currency {
     code: string;

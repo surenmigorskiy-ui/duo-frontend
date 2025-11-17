@@ -505,6 +505,8 @@ const handleRegister = async (newUserInfo: any) => {
           onReset={handleResetData}
           isDemoMode={isDemoMode}
           onToggleDemoMode={toggleDemoMode}
+          language={language}
+          activeCurrencies={activeCurrencies}
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           onLogout={handleLogout}
          />
