@@ -1,13 +1,14 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Transaction, Budget, PlannedExpense, User, Priority, PaymentMethod, DashboardLayoutItem, UserDetails } from '../types';
+    import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { Transaction, Budget, PlannedExpense, User, Priority, PaymentMethod, DashboardLayoutItem, UserDetails, Language } from '../types';
 import { PieChart, Pie, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid, Legend } from 'recharts';
 import { getFinancialAdvice } from '../services/geminiService';
+import { useTranslation } from '../hooks/useTranslation';
 import Spinner from './common/Spinner';
 import InfoTooltip from './common/InfoTooltip';
 
 // Hook for scroll animations that triggers rendering
 const useAnimateOnScroll = (ref: React.RefObject<HTMLElement>) => {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(true); // По умолчанию видимо
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
@@ -49,7 +50,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       <div className="p-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg text-sm">
         <p className="font-bold text-gray-800 dark:text-gray-100 mb-2">{label || name}</p>
         <p style={{ color: payload[0].payload.fill }}>
-            {`${Math.round(value).toLocaleString('ru-RU')} сум`}
+            {`${Math.round(value).toLocaleString('ru-RU')}`}
         </p>
       </div>
     );
@@ -58,19 +59,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const RADIAN = Math.PI / 180;
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload }: any) => {
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, payload, theme }: any) => {
   const radius = outerRadius * 0.6;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
   const percentage = (percent * 100).toFixed(0);
   const name = payload.name;
+  const isDark = document.documentElement.classList.contains('dark');
+  const textColor = isDark ? '#ffffff' : '#1f2937';
 
   if (percent < 0.05) return null;
 
   const words = name.split(' ');
   if (words.length > 1 && name.length > 12) {
       return (
-        <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs font-semibold pointer-events-none">
+        <text x={x} y={y} fill={textColor} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs font-semibold pointer-events-none">
           <tspan x={x} dy="-0.5em">{words[0]}</tspan>
           <tspan x={x} dy="1.1em">{`${words.slice(1).join(' ')} ${percentage}%`}</tspan>
         </text>
@@ -78,13 +81,14 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
   }
 
   return (
-    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs font-semibold pointer-events-none">
+    <text x={x} y={y} fill={textColor} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs font-semibold pointer-events-none">
       {`${name} ${percentage}%`}
     </text>
   );
 };
 
-const AIAdvisor: React.FC<{ financialData: { transactions: Transaction[], budget: Budget } }> = ({ financialData }) => {
+const AIAdvisor: React.FC<{ financialData: { transactions: Transaction[], budget: Budget }; language: Language }> = ({ financialData, language }) => {
+    const t = useTranslation(language);
     const [advice, setAdvice] = useState<string>('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string>('');
@@ -124,18 +128,17 @@ const AIAdvisor: React.FC<{ financialData: { transactions: Transaction[], budget
                     className="gemini-button w-full relative text-sm font-semibold bg-gradient-to-r from-teal-400 to-blue-500 text-white py-3 px-6 rounded-full shadow-lg hover:shadow-xl transition-shadow"
                 >
                     <Sparkles/>
-                    <i className="fas fa-brain mr-2"></i>Получить совет от ИИ
+                    <i className="fas fa-brain mr-2"></i>{t('dashboard.aiAdvice')}
                 </button>
             </div>
         )
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mt-8">
+        <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 mt-8 shadow-sm">
              <div className="flex items-start space-x-4">
-                <div className="text-2xl mt-1">✨</div>
                 <div>
-                    <h3 className="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-100">Совет от ИИ-ассистента</h3>
+                    <h3 className="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-100">{t('dashboard.aiAdvisor')}</h3>
                     {isLoading ? (
                         <div className="flex items-center space-x-2 text-gray-500 dark:text-gray-400">
                             <Spinner size="sm" />
@@ -167,7 +170,9 @@ const DashboardSettingsModal: React.FC<{
     onClose: () => void;
     layout: DashboardLayoutItem[];
     onLayoutChange: (newLayout: DashboardLayoutItem[]) => void;
-}> = ({ isOpen, onClose, layout, onLayoutChange }) => {
+    language: Language;
+}> = ({ isOpen, onClose, layout, onLayoutChange, language }) => {
+    const t = useTranslation(language);
     
     const handleVisibilityToggle = (id: string) => {
         const newLayout = layout.map(item => item.id === id ? { ...item, visible: !item.visible } : item);
@@ -189,15 +194,23 @@ const DashboardSettingsModal: React.FC<{
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md text-gray-800 dark:text-gray-200">
                  <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="text-xl font-bold">Настроить дашборд</h3>
+                    <h3 className="text-xl font-bold">{t('dashboard.configure')}</h3>
                  </div>
                  <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
                     {layout.map((item, index) => {
-                        const config = WIDGETS_CONFIG.find(w => w.id === item.id);
+                        const widgetNames: {[key: string]: string} = {
+                            'categorySpending': t('dashboard.categorySpending'),
+                            'dailySpending': t('dashboard.dailySpending'),
+                            'incomeVsExpense': t('dashboard.incomeVsExpense'),
+                            'budgetVsActual': t('dashboard.budgetVsActual'),
+                            'paymentMethodSpending': t('dashboard.paymentMethodSpending'),
+                            'userSpending': t('dashboard.userSpending'),
+                            'aiAdvisor': t('dashboard.aiAdvisor'),
+                        };
                         return (
                             <div key={item.id} className="flex items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
                                 <i className={`fas fa-grip-vertical text-gray-400 dark:text-gray-500 mr-4`}></i>
-                                <span className="flex-grow font-semibold">{config?.name}</span>
+                                <span className="flex-grow font-semibold">{widgetNames[item.id] || item.id}</span>
                                 <div className="flex items-center space-x-2">
                                     <button onClick={() => handleMove(index, 'up')} disabled={index === 0} className="w-8 h-8 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30"><i className="fas fa-arrow-up"></i></button>
                                     <button onClick={() => handleMove(index, 'down')} disabled={index === layout.length - 1} className="w-8 h-8 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30"><i className="fas fa-arrow-down"></i></button>
@@ -208,7 +221,7 @@ const DashboardSettingsModal: React.FC<{
                     })}
                  </div>
                  <div className="bg-gray-50 dark:bg-gray-800/50 px-6 py-4 flex justify-end rounded-b-lg">
-                    <button onClick={onClose} className="bg-teal-500 text-white font-semibold py-2 px-6 rounded-md hover:bg-teal-600">Готово</button>
+                    <button onClick={onClose} className="bg-teal-500 text-white font-semibold py-2 px-6 rounded-md hover:bg-teal-600">{t('dashboard.done')}</button>
                  </div>
             </div>
         </div>
@@ -225,6 +238,7 @@ interface DashboardProps {
     isSyncing: boolean;
     layout: DashboardLayoutItem[];
     onLayoutChange: (newLayout: DashboardLayoutItem[]) => void;
+    language: Language;
 }
 
 function usePrevious<T>(value: T): T | undefined {
@@ -235,7 +249,8 @@ function usePrevious<T>(value: T): T | undefined {
     return ref.current;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpenses, paymentMethods, userDetails, onNavigateToTransactions, isSyncing, layout, onLayoutChange }) => {
+const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpenses, paymentMethods, userDetails, onNavigateToTransactions, isSyncing, layout, onLayoutChange, language }) => {
+  const t = useTranslation(language);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const prevIsSyncing = usePrevious(isSyncing);
@@ -252,11 +267,21 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
 
   useEffect(() => {
       let timer: ReturnType<typeof setTimeout>;
+      // Когда синхронизация завершается (была активна, а теперь нет)
       if (prevIsSyncing && !isSyncing) {
           setShowSyncSuccess(true);
-          timer = setTimeout(() => setShowSyncSuccess(false), 2000);
+          // Скрываем галочку через 2 секунды
+          timer = setTimeout(() => {
+              setShowSyncSuccess(false);
+          }, 2000);
       }
-      return () => clearTimeout(timer);
+      // Сбрасываем галочку, если синхронизация начинается снова
+      if (isSyncing) {
+          setShowSyncSuccess(false);
+      }
+      return () => {
+          if (timer) clearTimeout(timer);
+      };
   }, [isSyncing, prevIsSyncing]);
 
   const availableMonths = useMemo(() => {
@@ -334,9 +359,19 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
   }, [expenses, selectedMonth]);
 
   const userSpendingData = useMemo(() => {
+    if (!userDetails || Object.keys(userDetails).length === 0) {
+      return [];
+    }
     const dataMap: { [key: string]: number } = {};
     expenses.forEach(t => { dataMap[t.user] = (dataMap[t.user] || 0) + t.amount; });
-    return Object.entries(dataMap).map(([name, value]) => ({ name: userDetails[name as User].name, value, userKey: name as User })).sort((a, b) => b.value - a.value);
+    return Object.entries(dataMap)
+      .filter(([name]) => userDetails && userDetails[name as User]) // Фильтруем только существующих пользователей
+      .map(([name, value]) => ({ 
+        name: userDetails[name as User]?.name || name, 
+        value, 
+        userKey: name as User 
+      }))
+      .sort((a, b) => b.value - a.value);
   }, [expenses, userDetails]);
   
   const prioritySpendingData = useMemo(() => {
@@ -353,7 +388,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
       const pmMap = new Map(paymentMethods.map(pm => [pm.id, pm.name]));
       expenses.forEach(t => {
           const pmName = pmMap.get(t.paymentMethodId || 'cash') || 'Неизвестно';
-          dataMap[pmName] = (dataMap[pmName] || 0) + t.amount;
+          dataMap[pmName as string] = (dataMap[pmName as string] || 0) + t.amount;
       });
       return Object.entries(dataMap).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
   }, [expenses, paymentMethods]);
@@ -372,12 +407,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
           const percentage = entry[1];
           const budgetAmount = (budget.total * percentage) / 100;
           const actualAmount = spentByCategory[category] || 0;
-          return { name: category, Бюджет: budgetAmount, Расход: actualAmount };
+          const budgetKey = t('budget.title');
+          const expenseKey = t('forms.expense');
+          return { name: category, [budgetKey]: budgetAmount, [expenseKey]: actualAmount };
         });
-  }, [expenses, budget]);
+  }, [expenses, budget, t]);
 
 
-  const incomeVsExpenseData = [{ name: 'Потоки', Доход: totalIncome, Расход: totalSpent }];
+  const incomeVsExpenseData = useMemo(() => {
+    const incomeKey = t('dashboard.income');
+    const expenseKey = t('forms.expense');
+    return [{ name: '', [incomeKey]: totalIncome, [expenseKey]: totalSpent }];
+  }, [totalIncome, totalSpent, t]);
 
   const spendingInsight = useMemo(() => {
     if (categorySpendingData.length < 2 || totalSpent === 0) return null;
@@ -389,25 +430,25 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
 
   const widgetComponents: {[key: string]: React.ReactNode} = {
     categorySpending: (
-        <div ref={refs.current['categorySpending']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Расходы по категориям</h3>
+        <div ref={refs.current['categorySpending']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">{t('dashboard.categorySpending')}</h3>
             {spendingInsight && <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{spendingInsight}</p>}
             {isVisible['categorySpending'] && (categorySpendingData.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
                 <PieChart>
-                <Pie data={categorySpendingData} cx="50%" cy="50%" labelLine={false} label={renderCustomizedLabel} outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name">
-                    {categorySpendingData.map((_, index) => <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} className="focus:outline-none" />)}
+                <Pie data={categorySpendingData} cx="50%" cy="50%" labelLine={false} label={renderCustomizedLabel} outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name" isAnimationActive={false}>
+                    {categorySpendingData.map((_, index) => <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} style={{ outline: 'none' }} />)}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
                 <Legend iconSize={10} wrapperStyle={{fontSize: "12px", paddingTop: '20px' }}/>
                 </PieChart>
             </ResponsiveContainer>
-            ) : ( <div className="h-[350px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-chart-pie text-4xl mb-4"></i><p>Недостаточно данных для построения графика.</p></div> ))}
+            ) : ( <div className="h-[350px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-chart-pie text-4xl mb-4"></i><p>{t('dashboard.noData')}</p></div> ))}
         </div>
     ),
     dailySpending: (
-        <div ref={refs.current['dailySpending']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">Динамика расходов по дням</h3>
+        <div ref={refs.current['dailySpending']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">{t('dashboard.dailySpending')}</h3>
             {isVisible['dailySpending'] && (dailySpendingData.some(d => d.amount > 0) ? (
             <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={dailySpendingData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
@@ -415,33 +456,34 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
                     <XAxis dataKey="day" tick={{ fill: 'currentColor', fontSize: 12 }} stroke="currentColor" opacity={0.5} tickFormatter={(day) => `${day}`} />
                     <YAxis tick={{ fill: 'currentColor', fontSize: 12 }} stroke="currentColor" opacity={0.5} tickFormatter={(value) => typeof value === 'number' ? new Intl.NumberFormat('ru-RU', { notation: 'compact', compactDisplay: 'short' }).format(value) : ''} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Line type="monotone" dataKey="amount" name="Расход" stroke="#1abc9c" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="amount" name={t('forms.expense')} stroke="#1abc9c" strokeWidth={2} dot={(props: any) => props.payload?.amount > 0 ? true : false} activeDot={false} />
                 </LineChart>
             </ResponsiveContainer>
-            ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-chart-line text-4xl mb-4"></i><p>Нет расходов в этом месяце.</p></div> ))}
+            ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-chart-line text-4xl mb-4"></i><p>{t('dashboard.noExpenses')}</p></div> ))}
         </div>
     ),
     incomeVsExpense: (
-        <div ref={refs.current['incomeVsExpense']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">Доходы / Расходы</h3>
+        <div ref={refs.current['incomeVsExpense']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">{t('dashboard.incomeVsExpense')}</h3>
             {isVisible['incomeVsExpense'] && (totalIncome > 0 || totalSpent > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={incomeVsExpenseData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                    <BarChart data={incomeVsExpenseData} margin={{ top: 5, right: 20, left: -10, bottom: 30 }}>
                          <CartesianGrid stroke="currentColor" opacity={0.1} />
                          <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 12 }} stroke="currentColor" opacity={0.5} />
                          <YAxis tick={{ fill: 'currentColor', fontSize: 12 }} stroke="currentColor" opacity={0.5} tickFormatter={(value) => typeof value === 'number' ? new Intl.NumberFormat('ru-RU', { notation: 'compact', compactDisplay: 'short' }).format(value) : ''} />
                          <Tooltip content={<CustomTooltip />} />
-                         <Legend />
-                         <Bar dataKey="Доход" fill="#2ecc71" />
-                         <Bar dataKey="Расход" fill="#e74c3c" />
+                         <Bar dataKey={t('dashboard.income')} fill="#2ecc71" isAnimationActive={false} />
+                         <Bar dataKey={t('forms.expense')} fill="#e74c3c" isAnimationActive={false} />
+                         <text x="25%" y="295" textAnchor="middle" fill="currentColor" fontSize="12" className="text-gray-600 dark:text-gray-400">{t('dashboard.income')}</text>
+                         <text x="75%" y="295" textAnchor="middle" fill="currentColor" fontSize="12" className="text-gray-600 dark:text-gray-400">{t('forms.expense')}</text>
                     </BarChart>
                 </ResponsiveContainer>
-            ): ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-balance-scale text-4xl mb-4"></i><p>Нет данных о доходах или расходах.</p></div>))}
+            ): ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-balance-scale text-4xl mb-4"></i><p>{t('dashboard.noIncomeExpense')}</p></div>))}
         </div>
     ),
     budgetVsActual: (
-        <div ref={refs.current['budgetVsActual']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">Бюджет vs. Расходы</h3>
+        <div ref={refs.current['budgetVsActual']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">{t('dashboard.budgetVsActual')}</h3>
             {isVisible['budgetVsActual'] && (budgetVsActualData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={budgetVsActualData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
@@ -450,48 +492,48 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
                          <YAxis tick={{ fill: 'currentColor', fontSize: 12 }} stroke="currentColor" opacity={0.5} tickFormatter={(value) => typeof value === 'number' ? new Intl.NumberFormat('ru-RU', { notation: 'compact', compactDisplay: 'short' }).format(value) : ''} />
                          <Tooltip content={<CustomTooltip />} />
                          <Legend />
-                         <Bar dataKey="Бюджет" fill="#3498db" />
-                         <Bar dataKey="Расход" fill="#f1c40f" />
+                         <Bar dataKey={t('budget.title')} fill="#3498db" />
+                         <Bar dataKey={t('forms.expense')} fill="#f1c40f" />
                     </BarChart>
                 </ResponsiveContainer>
-            ): ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-tasks text-4xl mb-4"></i><p>Нет категорий с бюджетом для сравнения.</p></div>))}
+            ): ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-tasks text-4xl mb-4"></i><p>{t('dashboard.noBudget')}</p></div>))}
         </div>
     ),
     paymentMethodSpending: (
-        <div ref={refs.current['paymentMethodSpending']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">Расходы по счетам</h3>
+        <div ref={refs.current['paymentMethodSpending']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+          <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">{t('dashboard.paymentMethodSpending')}</h3>
            {isVisible['paymentMethodSpending'] && (paymentMethodSpendingData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
-                        <Pie data={paymentMethodSpendingData} cx="50%" cy="50%" outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name" labelLine={false} label={renderCustomizedLabel}>
-                            {paymentMethodSpendingData.map((_, index) => <Cell key={`cell-${index}`} fill={PALETTE.slice(2)[index % PALETTE.slice(2).length]} />)}
+                        <Pie data={paymentMethodSpendingData} cx="50%" cy="50%" outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name" labelLine={false} label={renderCustomizedLabel} isAnimationActive={false}>
+                            {paymentMethodSpendingData.map((_, index) => <Cell key={`cell-${index}`} fill={PALETTE.slice(2)[index % PALETTE.slice(2).length]} style={{ outline: 'none' }} />)}
                         </Pie>
                         <Tooltip content={<CustomTooltip />} />
                         <Legend iconSize={10} />
                     </PieChart>
                 </ResponsiveContainer>
-           ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-wallet text-4xl mb-4"></i><p>Нет данных о расходах по счетам.</p></div> ))}
+           ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-wallet text-4xl mb-4"></i><p>{t('dashboard.noPaymentMethods')}</p></div> ))}
         </div>
     ),
     userSpending: (
-        <div ref={refs.current['userSpending']} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">Расходы по пользователям</h3>
+        <div ref={refs.current['userSpending']} className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 shadow-sm">
+          <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-6">{t('dashboard.userSpending')}</h3>
            {isVisible['userSpending'] && (userSpendingData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
-                        <Pie data={userSpendingData} cx="50%" cy="50%" outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name" labelLine={false} label={renderCustomizedLabel}>
-                            {userSpendingData.map((entry) => <Cell key={`cell-${entry.name}`} fill={USER_HEX_COLORS[entry.userKey]} /> )}
+                        <Pie data={userSpendingData} cx="50%" cy="50%" outerRadius="80%" fill="#8884d8" dataKey="value" nameKey="name" labelLine={false} label={renderCustomizedLabel} isAnimationActive={false}>
+                            {userSpendingData.map((entry) => <Cell key={`cell-${entry.name}`} fill={USER_HEX_COLORS[entry.userKey]} style={{ outline: 'none' }} /> )}
                         </Pie>
                         <Tooltip content={<CustomTooltip />} />
                         <Legend iconSize={10} />
                     </PieChart>
                 </ResponsiveContainer>
-           ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-users text-4xl mb-4"></i><p>Нет данных о расходах.</p></div> ))}
+           ) : ( <div className="h-[300px] flex items-center justify-center flex-col text-center text-gray-500 dark:text-gray-400"><i className="fas fa-users text-4xl mb-4"></i><p>{t('dashboard.noUsers')}</p></div> ))}
         </div>
     ),
     aiAdvisor: (
         <div ref={refs.current['aiAdvisor']}>
-            <AIAdvisor financialData={{ transactions: filteredTransactions, budget }} />
+            <AIAdvisor financialData={{ transactions: filteredTransactions, budget }} language={language} />
         </div>
     )
   }
@@ -505,23 +547,25 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
             onClose={() => setIsSettingsOpen(false)}
             layout={layout}
             onLayoutChange={onLayoutChange}
+            language={language}
         />
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 space-y-6">
+      <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-xl p-6 space-y-6 shadow-sm">
           <div className="flex justify-between items-center">
              <div className="relative inline-block">
                 {availableMonths.length > 0 ? (
                     <>
-                        <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100">
-                            Обзор за
+                        <h3 className="text-lg font-medium text-gray-800 dark:text-gray-100 flex items-center">
+                            {t('dashboard.monthOverview')}
                             <select 
                                 value={selectedMonth} 
                                 onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="bg-transparent font-medium text-lg text-gray-800 dark:text-gray-100 border-none focus:ring-0 p-0 ml-1 appearance-none cursor-pointer"
+                                className="bg-transparent font-medium text-lg text-gray-800 dark:text-gray-100 border-none focus:ring-0 p-0 ml-1 mr-1 appearance-none cursor-pointer underline decoration-dotted"
                             >
                                 {availableMonths.map(month => (
                                     <option key={month.key} value={month.key}>{month.label}</option>
                                 ))}
                             </select>
+                            <i className="fas fa-chevron-down text-xs text-gray-400 dark:text-gray-500"></i>
                         </h3>
                     </>
                 ) : <h3 className="text-lg font-medium text-gray-500 dark:text-gray-400">Обзор</h3>}
@@ -530,26 +574,31 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, budget, plannedExpe
                 <button onClick={() => setIsSettingsOpen(true)} className="w-8 h-8 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-teal-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                     <i className="fas fa-cog"></i>
                 </button>
-                <div className="w-5 h-5 flex items-center justify-center">
-                    {showSyncSuccess ? <i className="fas fa-check-circle text-green-500 animate-fade-in-up"></i> : isSyncing ? <i className="fas fa-sync-alt fa-spin text-teal-500"></i> : null}
+                <div className="w-5 h-5 flex items-center justify-center relative">
+                    {isSyncing && !showSyncSuccess && (
+                        <i className="fas fa-sync-alt fa-spin text-teal-500 absolute"></i>
+                    )}
+                    {showSyncSuccess && (
+                        <i className="fas fa-check-circle text-green-500 animate-fade-in-up absolute" style={{ animation: 'fade-in-up 0.3s ease-out' }}></i>
+                    )}
                 </div>
              </div>
           </div>
           <div className="text-center">
               <div className="flex items-center justify-center">
-                  <p className="text-gray-500 dark:text-gray-400">Баланс</p>
+                  <p className="text-gray-600 dark:text-gray-300">Баланс</p>
                   <InfoTooltip text="Доступный остаток с учетом плановых расходов на будущие периоды." />
               </div>
               <p className="text-3xl md:text-4xl font-bold text-teal-500 dark:text-teal-400 my-1">{Math.round(remainingBudget).toLocaleString('ru-RU')} сум</p>
           </div>
           <div className="flex justify-between pt-4">
               <button onClick={() => onNavigateToTransactions('income')} className="text-center w-1/2 btn-press">
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Доход</p>
-                  <p className="text-xl font-semibold text-green-500">+{Math.round(totalIncome).toLocaleString('ru-RU')}</p>
+                  <p className="text-gray-600 dark:text-gray-300 text-sm">Доход</p>
+                  <p className="text-lg font-semibold text-green-600 dark:text-green-400">+{Math.round(totalIncome).toLocaleString('ru-RU')}</p>
               </button>
               <button onClick={() => onNavigateToTransactions('expense')} className="text-center w-1/2 btn-press">
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Потрачено</p>
-                  <p className="text-xl font-semibold text-red-500">-{Math.round(totalSpent).toLocaleString('ru-RU')}</p>
+                  <p className="text-gray-600 dark:text-gray-300 text-sm">Потрачено</p>
+                  <p className="text-lg font-semibold text-red-600 dark:text-red-400">-{Math.round(totalSpent).toLocaleString('ru-RU')}</p>
               </button>
           </div>
       </div>

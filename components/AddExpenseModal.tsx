@@ -1,6 +1,9 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Transaction, User, Priority, Category, ParsedReceipt, SubCategory, PaymentMethod, UserDetails } from '../types';
+import { Transaction, User, Priority, Category, ParsedReceipt, SubCategory, PaymentMethod, UserDetails, Language } from '../types';
 import { parseReceipt } from '../services/geminiService';
+import { getCurrencyRate } from '../services/currencyService';
+import { CURRENCIES } from '../constants';
+import { useTranslation } from '../hooks/useTranslation';
 import Spinner from './common/Spinner';
 import FormattedNumberInput from './common/FormattedNumberInput';
 
@@ -13,14 +16,63 @@ const formatISOForInput = (isoString: string) => {
   return localDate.toISOString().slice(0, 16);
 };
 
-const USD_TO_SUM_RATE = 12000;
+// Курс валют будет загружаться динамически
 
-const CurrencySwitcher: React.FC<{ currency: 'SUM' | 'USD'; onChange: (c: 'SUM' | 'USD') => void }> = ({ currency, onChange }) => {
+const CurrencySwitcher: React.FC<{ currency: string; onChange: (c: string) => void; activeCurrencies: { [key: string]: boolean } }> = ({ currency, onChange, activeCurrencies }) => {
+    // Основные валюты всегда доступны
+    const basicCurrencies = ['SUM', 'USD'];
+    // Дополнительные валюты из настроек
+    const additionalCurrencies = Object.keys(activeCurrencies).filter(code => activeCurrencies[code] && !basicCurrencies.includes(code));
+    const availableCurrencies = [...basicCurrencies, ...additionalCurrencies];
+    const currenciesToShow = CURRENCIES.filter(c => availableCurrencies.includes(c.code));
+    const selectedCurrency = currenciesToShow.find(c => c.code === currency) || currenciesToShow[0];
+    
+    // Если только 2 валюты (SUM и USD), показываем переключатель
+    if (currenciesToShow.length === 2) {
+        return (
+            <div className="relative flex w-24 h-9 bg-gray-200 dark:bg-gray-700 rounded-full p-1 overflow-hidden">
+                <div className={`absolute top-1 left-1 w-[calc(50%-2px)] h-7 bg-white dark:bg-gray-900 rounded-full shadow transition-transform duration-300 ease-in-out ${currency === currenciesToShow[1].code ? 'translate-x-[calc(100%+2px)]' : ''}`}></div>
+                <button type="button" onClick={() => onChange(currenciesToShow[0].code)} className="relative z-10 w-1/2 text-xs font-semibold focus:outline-none flex items-center justify-center">{currency === currenciesToShow[0].code ? currenciesToShow[0].code : <span className="text-gray-400 dark:text-gray-500">{currenciesToShow[0].code}</span>}</button>
+                <button type="button" onClick={() => onChange(currenciesToShow[1].code)} className="relative z-10 w-1/2 text-xs font-semibold focus:outline-none flex items-center justify-center">{currency === currenciesToShow[1].code ? currenciesToShow[1].code : <span className="text-gray-400 dark:text-gray-500">{currenciesToShow[1].code}</span>}</button>
+            </div>
+        );
+    }
+    
+    // Если больше валют, показываем выпадающий список
+    const [isOpen, setIsOpen] = useState(false);
     return (
-        <div className="relative flex w-24 h-9 bg-gray-200 dark:bg-gray-700 rounded-full p-1">
-            <div className={`absolute top-1 left-1 w-1/2 h-7 bg-white dark:bg-gray-900 rounded-full shadow transition-transform duration-300 ease-in-out ${currency === 'USD' ? 'translate-x-full' : ''}`}></div>
-            <button type="button" onClick={() => onChange('SUM')} className="relative z-10 w-1/2 text-sm font-semibold focus:outline-none">{currency === 'SUM' ? 'SUM' : <span className="text-gray-400">SUM</span>}</button>
-            <button type="button" onClick={() => onChange('USD')} className="relative z-10 w-1/2 text-sm font-semibold focus:outline-none">{currency === 'USD' ? 'USD' : <span className="text-gray-400">USD</span>}</button>
+        <div className="relative">
+            <button 
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="relative flex items-center justify-between w-24 h-9 bg-gray-200 dark:bg-gray-700 rounded-full px-3 text-xs font-semibold focus:outline-none hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+                <span>{selectedCurrency.code}</span>
+                <i className={`fas fa-chevron-${isOpen ? 'up' : 'down'} text-xs ml-1`}></i>
+            </button>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)}></div>
+                    <div className="absolute top-10 left-0 z-20 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto w-48">
+                        {currenciesToShow.map((curr) => (
+                            <button
+                                key={curr.code}
+                                type="button"
+                                onClick={() => {
+                                    onChange(curr.code);
+                                    setIsOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between ${
+                                    currency === curr.code ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400' : 'text-gray-800 dark:text-gray-200'
+                                }`}
+                            >
+                                <span className="font-medium">{curr.code}</span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{curr.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
         </div>
     )
 }
@@ -36,9 +88,12 @@ interface AddTransactionModalProps {
   expenseCategories: Category[];
   incomeCategories: Category[];
   userDetails: UserDetails;
+  activeCurrencies?: { [key: string]: boolean };
+  language: Language;
 }
 
-const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails }) => {
+const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails, activeCurrencies = { SUM: true, USD: true }, language }) => {
+  const t = useTranslation(language);
   const [transactionType, setTransactionType] = useState<'expense' | 'income'>('expense');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
@@ -53,8 +108,10 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<{ amount?: boolean, category?: boolean }>({});
-  const [currency, setCurrency] = useState<'SUM' | 'USD'>('SUM');
+  const [currency, setCurrency] = useState<string>('SUM');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [currencyRate, setCurrencyRate] = useState<number>(1);
+  const [loadingRate, setLoadingRate] = useState(false);
   
   const isCreatingFromTemplate = transactionToEdit?.id.startsWith('temp-') ?? false;
   const isEditMode = transactionToEdit !== null && !isCreatingFromTemplate;
@@ -123,6 +180,22 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
     if (!isEditMode) setUser(currentUser);
   }, [currentUser, isEditMode]);
 
+  useEffect(() => {
+    // Загружаем курс валют при изменении валюты
+    if (currency !== 'SUM') {
+      setLoadingRate(true);
+      getCurrencyRate(currency).then(rate => {
+        setCurrencyRate(rate);
+        setLoadingRate(false);
+      }).catch(() => {
+        setCurrencyRate(12000); // Fallback
+        setLoadingRate(false);
+      });
+    } else {
+      setCurrencyRate(1);
+    }
+  }, [currency]);
+
   const handleClose = () => {
     resetForm();
     onClose();
@@ -165,29 +238,39 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
-    
-    const finalAmount = currency === 'USD' ? Number(amount) * USD_TO_SUM_RATE : Number(amount);
+    try {
+      if (!validateForm()) return;
+      
+      if (!amount || Number(amount) <= 0 || !category) {
+        setFormErrors({ amount: !amount || Number(amount) <= 0, category: !category });
+        return;
+      }
+      
+      const finalAmount = currency === 'SUM' ? Number(amount) : Number(amount) * currencyRate;
 
-    const transactionData = {
-        description: description || category,
-        amount: Math.round(finalAmount),
-        category,
-        subCategory,
-        date: new Date(date).toISOString(),
-        user,
-        priority,
-        type: transactionType,
-        paymentMethodId,
-    };
+      const transactionData = {
+          description: description || category,
+          amount: Math.round(finalAmount),
+          category,
+          subCategory,
+          date: new Date(date).toISOString(),
+          user,
+          priority,
+          type: transactionType,
+          paymentMethodId,
+      };
 
-    if (isEditMode) {
-        onUpdateTransaction({ ...transactionData, id: transactionToEdit.id });
-    } else {
-        const sourceId = isCreatingFromTemplate ? transactionToEdit.id.substring(5) : undefined;
-        onAddTransaction(transactionData, sourceId);
+      if (isEditMode && transactionToEdit) {
+          onUpdateTransaction({ ...transactionData, id: transactionToEdit.id });
+      } else {
+          const sourceId = isCreatingFromTemplate && transactionToEdit ? transactionToEdit.id.substring(5) : undefined;
+          onAddTransaction(transactionData, sourceId);
+      }
+      handleClose();
+    } catch (error) {
+      console.error('Ошибка при сохранении транзакции:', error);
+      alert('Произошла ошибка при сохранении. Попробуйте еще раз.');
     }
-    handleClose();
   };
 
   if (!isOpen) return null;
@@ -202,8 +285,8 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
           <div className="flex justify-between items-start mb-6">
              <div className="relative">
                 <div className="flex justify-center border-b border-gray-200 dark:border-gray-700">
-                    <button onClick={() => setTransactionType('expense')} className={`w-28 py-2 text-sm font-semibold transition-colors focus:outline-none ${transactionType === 'expense' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>Расход</button>
-                    <button onClick={() => setTransactionType('income')} className={`w-28 py-2 text-sm font-semibold transition-colors focus:outline-none ${transactionType === 'income' ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'}`}>Доход</button>
+                    <button onClick={() => setTransactionType('expense')} className={`w-28 py-2 text-sm font-semibold transition-colors focus:outline-none ${transactionType === 'expense' ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>{t('forms.expense')}</button>
+                    <button onClick={() => setTransactionType('income')} className={`w-28 py-2 text-sm font-semibold transition-colors focus:outline-none ${transactionType === 'income' ? 'text-green-500' : 'text-gray-500 dark:text-gray-400'}`}>{t('forms.income')}</button>
                 </div>
                 <div className={`absolute bottom-0 h-0.5 ${tabBgColorClass} transition-all duration-300 ease-in-out`} style={{ width: '50%', left: transactionType === 'expense' ? '0%' : '50%' }}></div>
             </div>
@@ -215,7 +298,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="relative">
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Категория</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.category')}</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className={`mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.category ? 'border-red-500' : ''}`}>
                   <option value="" disabled>Выберите</option>
                   {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -224,7 +307,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
               </div>
               {availableSubCategories.length > 0 && (
                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Подкатегория</label>
+                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.subCategory')}</label>
                     <select value={subCategory} onChange={(e) => setSubCategory(e.target.value)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
                       <option value="">Выберите</option>
                       {availableSubCategories.map(sc => <option key={sc.id} value={sc.name}>{sc.name}</option>)}
@@ -233,19 +316,20 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
               )}
             </div>
              <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Сумма</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.amount')}</label>
                 <div className="flex mt-1 items-center gap-3">
                     <div className="relative flex-grow">
                          <FormattedNumberInput value={amount} onChange={setAmount} className={`block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.amount ? 'border-red-500' : ''}`} required />
                          {formErrors.amount && <i className="fas fa-exclamation-circle text-red-500 absolute right-3 top-2.5"></i>}
                     </div>
-                    <CurrencySwitcher currency={currency} onChange={setCurrency} />
+                    <CurrencySwitcher currency={currency} onChange={setCurrency} activeCurrencies={activeCurrencies} />
                 </div>
-                 {currency === 'USD' && amount && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">≈ {Math.round(Number(amount) * USD_TO_SUM_RATE).toLocaleString('ru-RU')} SUM</p>}
+                 {currency !== 'SUM' && amount && !loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">≈ {Math.round(Number(amount) * currencyRate).toLocaleString('ru-RU')} SUM</p>}
+                 {loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">{t('forms.loadingRate')}</p>}
             </div>
 
             <div className="relative">
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Описание</label>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.description')}</label>
               <div className="flex items-center mt-1">
                 <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Название магазина или товара..." className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" />
                 {transactionType === 'expense' && !isEditMode && (
@@ -281,14 +365,14 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                  <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                     <div className="grid grid-cols-2 gap-4">
                          <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Дата и время</label>
+                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.dateTime')}</label>
                             <input type="datetime-local" value={date} max={maxDate} onChange={(e) => setDate(e.target.value)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Счет</label>
+                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.account')}</label>
                             <select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
                             <option value="">Не выбрано</option>
-                            {filteredPaymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name} ({userDetails[pm.owner].name})</option>)}
+                            {filteredPaymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name} ({userDetails[pm.owner]?.name || pm.owner})</option>)}
                             </select>
                         </div>
                     </div>
@@ -296,17 +380,17 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                         <div>
                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Чей {transactionType === 'expense' ? 'расход' : 'доход'}</label>
                             <select value={user} onChange={(e) => setUser(e.target.value as User)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
-                                <option value="Suren">{userDetails['Suren'].name}</option>
-                                <option value="Alena">{userDetails['Alena'].name}</option>
-                                <option value="shared">{userDetails['shared'].name}</option>
+                                {userDetails && Object.keys(userDetails).map((userId) => (
+                                    <option key={userId} value={userId}>{userDetails[userId as User]?.name || userId}</option>
+                                ))}
                             </select>
                         </div>
                         {transactionType === 'expense' && (
                         <div>
-                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Приоритет</label>
+                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.priority')}</label>
                             <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
-                                <option value="must-have">Обязательный</option>
-                                <option value="nice-to-have">Желательный</option>
+                                <option value="must-have">{t('transactions.mustHave')}</option>
+                                <option value="nice-to-have">{t('transactions.niceToHave')}</option>
                             </select>
                         </div>
                         )}
@@ -315,9 +399,9 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
             </div>
 
             <div className="flex justify-end pt-6 space-x-3">
-              <button type="button" onClick={handleClose} className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">Отмена</button>
+              <button type="button" onClick={handleClose} className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">{t('forms.cancel')}</button>
               <button type="submit" disabled={!isFormValid} className="bg-teal-500 text-white font-semibold py-2 px-5 rounded-md hover:bg-teal-600 disabled:bg-teal-300 dark:disabled:bg-teal-800 disabled:cursor-not-allowed">
-                {isEditMode ? 'Обновить' : 'Сохранить'}
+                {isEditMode ? t('forms.update') : t('forms.save')}
               </button>
             </div>
           </form>

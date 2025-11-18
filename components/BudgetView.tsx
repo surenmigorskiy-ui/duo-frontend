@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Budget, Transaction, PaymentMethod, Category, UserDetails } from '../types';
+import { Budget, Transaction, PaymentMethod, Category, UserDetails, Language } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
 import FormattedNumberInput from './common/FormattedNumberInput';
 import CategoriesManager from './CategoriesManager';
 import InfoTooltip from './common/InfoTooltip';
@@ -16,6 +17,7 @@ interface BudgetViewProps {
   onDeletePaymentMethod: (id: string) => void;
   onStartEditPaymentMethod: (item: PaymentMethod | null) => void;
   onUpdateCategories: (categories: Category[]) => void;
+  language: Language;
 }
 
 const ProgressBar: React.FC<{ value: number; max: number }> = ({ value, max }) => {
@@ -41,7 +43,8 @@ const getPaymentMethodIcon = (type: PaymentMethod['type']) => {
     }
 };
 
-const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseCategories: Category[], onUpdateBudget: (budget: Budget) => void}> = ({ budget, expenses, expenseCategories, onUpdateBudget }) => {
+const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseCategories: Category[], onUpdateBudget: (budget: Budget) => void; language: Language}> = ({ budget, expenses, expenseCategories, onUpdateBudget, language }) => {
+    const t = useTranslation(language);
     const [isEditing, setIsEditing] = useState(false);
     const [editableBudget, setEditableBudget] = useState<Budget>(budget);
 
@@ -114,7 +117,7 @@ const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseC
         <>
             <div className="flex justify-between items-center mb-2">
                  <div className="flex items-center">
-                    <h2 className="text-2xl font-bold">Распределение бюджета</h2>
+                    <h2 className="text-2xl font-bold">{t('budget.distribution')}</h2>
                     <InfoTooltip text="Планируйте расходы, задавая процент от общего бюджета на каждую категорию." />
                 </div>
                 {!isEditing && <button onClick={() => setIsEditing(true)} className="text-gray-500 dark:text-gray-400 hover:text-teal-500 dark:hover:text-teal-400 w-10 h-10 rounded-full flex items-center justify-center transition-colors btn-press"><i className="fas fa-pencil-alt"></i></button>}
@@ -122,10 +125,10 @@ const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseC
             
             <div className="my-8">
                 <div className="flex justify-between items-end mb-2">
-                    <span className="text-lg font-medium text-gray-800 dark:text-gray-100">Плановый бюджет на месяц</span>
+                    <span className="text-lg font-medium text-gray-800 dark:text-gray-100">{t('budget.monthlyBudget')}</span>
                     {!isEditing ? (
                         <span className="text-lg font-bold text-teal-500 dark:text-teal-400 font-mono">
-                            {Math.round(budget.total).toLocaleString('ru-RU')} сум
+                            {Math.round(budget.total).toLocaleString('ru-RU')}
                         </span>
                     ) : (
                         <FormattedNumberInput value={editableBudget.total} onChange={value => handleBudgetChange('total', value)} className="w-40 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-md shadow-sm p-1 text-right font-mono" />
@@ -136,7 +139,7 @@ const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseC
 
             {isEditing && (
                 <div className={`mb-6 p-3 rounded-lg text-center ${totalAllocatedPercentage > 100 ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                    <span className="font-bold">Распределено: {totalAllocatedPercentage}% из 100%</span>
+                    <span className="font-bold">{t('budget.allocated')}: {totalAllocatedPercentage}% из 100%</span>
                 </div>
             )}
 
@@ -145,13 +148,13 @@ const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseC
                 (isEditing || item.percentage > 0) && <div key={item.name}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center">
-                      <i className={`${item.icon} mr-3 text-lg w-6 text-center text-gray-400 dark:text-gray-500`}></i>
+                      <i className={`${item.icon} mr-3 text-lg w-6 text-center text-gray-400 dark:text-gray-500 flex-shrink-0`} style={{ width: '24px' }}></i>
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.name}</span>
                     </div>
                     {!isEditing ? (
                         <div className="text-sm">
                           <span className="font-bold text-gray-800 dark:text-gray-200">{Math.round(item.spent).toLocaleString('ru-RU')}</span>
-                          <span className="text-gray-500 dark:text-gray-400"> / {Math.round(item.budget).toLocaleString('ru-RU')} сум</span>
+                          <span className="text-gray-500 dark:text-gray-400"> / {Math.round(item.budget).toLocaleString('ru-RU')}</span>
                         </div>
                     ) : (
                         <div className="flex items-center gap-2">
@@ -166,8 +169,8 @@ const BudgetContent: React.FC<{budget: Budget; expenses: Transaction[], expenseC
                         <ProgressBar value={item.spent} max={item.budget} />
                          <div className="text-right mt-1.5 text-xs font-medium">
                           {item.remaining >= 0 
-                            ? <span className="text-green-600">Остаток: {Math.round(item.remaining).toLocaleString('ru-RU')} сум</span>
-                            : <span className="text-red-600">Перерасход: {Math.round(Math.abs(item.remaining)).toLocaleString('ru-RU')} сум</span>
+                            ? <span className="text-green-600">Остаток: {Math.round(item.remaining).toLocaleString('ru-RU')}</span>
+                            : <span className="text-red-600">Перерасход: {Math.round(Math.abs(item.remaining)).toLocaleString('ru-RU')}</span>
                           }
                          </div>
                     </>
@@ -191,12 +194,14 @@ const AccountsContent: React.FC<{
     onDelete: (id: string) => void;
     onStartEdit: (item: PaymentMethod) => void;
     onAddNew: () => void;
-}> = ({ paymentMethods, userDetails, onDelete, onStartEdit, onAddNew }) => {
+    language: Language;
+}> = ({ paymentMethods, userDetails, onDelete, onStartEdit, onAddNew, language }) => {
+    const t = useTranslation(language);
     return (
         <>
             <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center">
-                    <h2 className="text-2xl font-bold">Счета и карты</h2>
+                    <h2 className="text-2xl font-bold">{t('budget.accounts')}</h2>
                     <InfoTooltip text="Ваши источники средств для расходов. Например, банковские карты, наличные или счета." />
                 </div>
                 <button onClick={onAddNew} className="bg-teal-500 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-teal-600 transition-colors shadow btn-press">
@@ -213,7 +218,7 @@ const AccountsContent: React.FC<{
                             <p className="font-bold text-gray-800 dark:text-gray-100">{pm.name}</p>
                             <div className="flex items-center space-x-3 text-xs mt-1">
                                 <span className="text-gray-500 dark:text-gray-400">{pm.type}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-white text-opacity-80 text-xs ${userDetails[pm.owner].color}`}>{userDetails[pm.owner].name}</span>
+                                <span className={`px-2 py-0.5 rounded-full text-white text-opacity-80 text-xs ${userDetails[pm.owner]?.color || 'bg-gray-500'}`}>{userDetails[pm.owner]?.name || pm.owner}</span>
                             </div>
                         </div>
                         <div className="flex items-center">
@@ -232,13 +237,14 @@ const AccountsContent: React.FC<{
 };
 
 
-const BudgetView: React.FC<BudgetViewProps> = ({ budget, transactions, paymentMethods, expenseCategories, userDetails, onUpdateBudget, onAddPaymentMethod, onUpdatePaymentMethod, onDeletePaymentMethod, onStartEditPaymentMethod, onUpdateCategories }) => {
+const BudgetView: React.FC<BudgetViewProps> = ({ budget, transactions, paymentMethods, expenseCategories, userDetails, onUpdateBudget, onAddPaymentMethod, onUpdatePaymentMethod, onDeletePaymentMethod, onStartEditPaymentMethod, onUpdateCategories, language }) => {
+    const t = useTranslation(language);
     const [activeTab, setActiveTab] = useState<'budget' | 'accounts' | 'categories'>('budget');
     const expenses = useMemo(() => transactions.filter(t => t.type === 'expense'), [transactions]);
 
     const tabs = [
-        { id: 'budget', label: 'Бюджет' },
-        { id: 'accounts', label: 'Счета' },
+        { id: 'budget', label: t('budget.title') },
+        { id: 'accounts', label: t('accounts.title') },
         { id: 'categories', label: 'Категории' },
     ];
 
@@ -266,13 +272,14 @@ const BudgetView: React.FC<BudgetViewProps> = ({ budget, transactions, paymentMe
                     ></div>
                 </div>
 
-                {activeTab === 'budget' && <BudgetContent budget={budget} expenses={expenses} expenseCategories={expenseCategories} onUpdateBudget={onUpdateBudget} />}
+                {activeTab === 'budget' && <BudgetContent budget={budget} expenses={expenses} expenseCategories={expenseCategories} onUpdateBudget={onUpdateBudget} language={language} />}
                 {activeTab === 'accounts' && <AccountsContent 
                     paymentMethods={paymentMethods}
                     userDetails={userDetails}
                     onDelete={onDeletePaymentMethod}
                     onStartEdit={onStartEditPaymentMethod}
                     onAddNew={() => onStartEditPaymentMethod(null)}
+                    language={language}
                 />}
                 {activeTab === 'categories' && <CategoriesManager 
                     expenseCategories={expenseCategories}

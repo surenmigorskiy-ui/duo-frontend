@@ -174,4 +174,11 @@ export const CURRENCIES: Currency[] = [
     { code: 'EUR', name: 'Евро' },
     { code: 'RUB', name: 'Российский рубль' },
     { code: 'KZT', name: 'Казахстанский тенге' },
+    { code: 'GBP', name: 'Британский фунт' },
+    { code: 'CNY', name: 'Китайский юань' },
+    { code: 'JPY', name: 'Японская иена' },
+    { code: 'KRW', name: 'Южнокорейская вона' },
+    { code: 'BRL', name: 'Бразильский реал' },
+    { code: 'AUD', name: 'Австралийский доллар' },
+    { code: 'CAD', name: 'Канадский доллар' },
 ];

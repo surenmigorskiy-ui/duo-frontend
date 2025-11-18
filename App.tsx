@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Transaction, Budget, View, User, Goal, PaymentMethod, Theme, Category, PlannedExpense, DashboardLayoutItem, UserDetails, Language } from './types';
-import { MOCK_BUDGET, USER_DETAILS, MOCK_PAYMENT_METHODS, DEFAULT_CATEGORIES, INCOME_CATEGORIES } from './constants';
+import { MOCK_BUDGET, USER_DETAILS, MOCK_PAYMENT_METHODS, DEFAULT_CATEGORIES, INCOME_CATEGORIES, DEMO_DATA, DEMO_USER_DETAILS } from './constants';
 import AddTransactionModal from './components/AddExpenseModal';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -16,20 +16,19 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import JoinPage from './components/JoinPage';
 import api from './services/api'; 
 
-// --- САМЫЙ НАДЕЖНЫЙ СПОСОБ ПРОЧИТАТЬ КОД ИЗ ССЫЛКИ ---
-// Этот код выполняется один раз при самой первой загрузке скрипта
-const path = window.location.pathname;
-if (path.startsWith('/join/')) {
+// Инициализация кода приглашения (выполняется безопасно)
+if (typeof window !== 'undefined') {
+  const path = window.location.pathname;
+  if (path.startsWith('/join/')) {
     const code = path.split('/')[2];
     if (code) {
-        console.log('Найден код приглашения (синхронно):', code);
-        sessionStorage.setItem('inviteCode', code);
-        // Очищаем URL, чтобы он не мешался при перезагрузках
-        window.history.replaceState({}, document.title, "/");
+      console.log('Найден код приглашения (синхронно):', code);
+      sessionStorage.setItem('inviteCode', code);
+      // Очищаем URL, чтобы он не мешался при перезагрузках
+      window.history.replaceState({}, document.title, "/");
     }
+  }
 }
-
-// ... Остальная часть файла без изменений ...
 
 interface AppData {
   transactions: Transaction[];
@@ -57,12 +56,13 @@ const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutItem[] = [
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const storedUser = localStorage.getItem('currentUser');
-    const token = localStorage.getItem('authToken');
+    if (typeof window === 'undefined') return null;
     try {
-        return storedUser && token ? JSON.parse(storedUser) as User : null;
+      const storedUser = localStorage.getItem('currentUser');
+      const token = localStorage.getItem('authToken');
+      return storedUser && token ? JSON.parse(storedUser) as User : null;
     } catch {
-        return null;
+      return null;
     }
   });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -95,20 +95,65 @@ const App: React.FC = () => {
 
   // ---------- THEME (robust) ----------
   const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem('theme') as Theme | null;
-    return stored === 'dark' || stored === 'light' ? stored : 'light';
+    if (typeof window === 'undefined') return 'light';
+    try {
+      const stored = localStorage.getItem('theme') as Theme | null;
+      if (stored === 'dark' || stored === 'light') {
+        return stored;
+      }
+    } catch {
+      // Игнорируем ошибки localStorage
+    }
+    // Если тема не сохранена, используем светлую по умолчанию (не системную)
+    return 'light';
   });
 
   useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
     const root = document.documentElement;
+    
+    // Применяем тему явно
     if (theme === 'dark') {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('theme', theme);
+    
+    // Сохраняем в localStorage
+    try {
+      localStorage.setItem('theme', theme);
+    } catch {
+      // Игнорируем ошибки localStorage
+    }
     root.setAttribute('data-theme', theme);
+    
+    // Устанавливаем color-scheme для предотвращения автоматического определения системной темы
+    if (theme === 'dark') {
+      root.style.colorScheme = 'dark';
+    } else {
+      root.style.colorScheme = 'light';
+    }
   }, [theme]);
+
+  // Динамический заголовок страницы
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const viewTitles: { [key in View]: string } = {
+      dashboard: 'Обзор',
+      transactions: 'Мониторинг',
+      budget: 'Бюджет',
+      goals: 'Цели',
+    };
+    
+    const title = viewTitles[currentView] || 'Duo Finance';
+    document.title = `${title} | Duo Finance`;
+    
+    // Обновляем favicon
+    const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (link) {
+      link.href = '/favicon.svg';
+    }
+  }, [currentView]);
 
   const cycleTheme = useCallback(() => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
@@ -156,12 +201,21 @@ const App: React.FC = () => {
     }
   };
 
-  const saveDataToServer = async () => {
+  const saveDataToServer = async (updatedData?: Partial<AppData>) => {
     if (isDemoMode || isLoading) return;
 
     try {
       setIsSyncing(true);
-      const data: AppData = {
+      const data: AppData = updatedData ? {
+        transactions: updatedData.transactions ?? transactions,
+        budget: updatedData.budget ?? budget,
+        goals: updatedData.goals ?? goals,
+        plannedExpenses: updatedData.plannedExpenses ?? plannedExpenses,
+        paymentMethods: updatedData.paymentMethods ?? paymentMethods,
+        expenseCategories: updatedData.expenseCategories ?? expenseCategories,
+        incomeCategories: updatedData.incomeCategories ?? incomeCategories,
+        dashboardLayout: updatedData.dashboardLayout ?? dashboardLayout,
+      } : {
         transactions, budget, goals, plannedExpenses, paymentMethods, expenseCategories, incomeCategories, dashboardLayout
       };
       await api.put('/family/data', data);
@@ -173,7 +227,53 @@ const App: React.FC = () => {
   };
   
   const toggleDemoMode = () => {
-    // Логика демо-режима
+    setIsDemoMode(prev => {
+      const newMode = !prev;
+      
+      if (newMode) {
+        // ВХОД В ДЕМО-РЕЖИМ
+        // Сохраняем текущие (реальные) данные в realData
+        setRealData({ 
+          transactions, 
+          budget, 
+          goals, 
+          plannedExpenses, 
+          paymentMethods, 
+          expenseCategories, 
+          incomeCategories, 
+          dashboardLayout 
+        });
+        
+        // Загружаем демо-данные во все основные состояния приложения
+        setTransactions(DEMO_DATA.transactions as Transaction[]);
+        setBudget(DEMO_DATA.budget);
+        setGoals(DEMO_DATA.goals as Goal[]);
+        setPlannedExpenses(DEMO_DATA.plannedExpenses as PlannedExpense[]);
+        setPaymentMethods(DEMO_DATA.paymentMethods as PaymentMethod[]);
+        setExpenseCategories(DEMO_DATA.expenseCategories);
+        setIncomeCategories(DEMO_DATA.incomeCategories);
+        setUserDetails(DEMO_USER_DETAILS);
+      } else if (realData) {
+        // ВЫХОД ИЗ ДЕМО-РЕЖИМА
+        // Восстанавливаем реальные данные из realData
+        setTransactions(realData.transactions);
+        setBudget(realData.budget);
+        setGoals(realData.goals);
+        setPlannedExpenses(realData.plannedExpenses);
+        setPaymentMethods(realData.paymentMethods);
+        setExpenseCategories(realData.expenseCategories);
+        setIncomeCategories(realData.incomeCategories);
+        setDashboardLayout(realData.dashboardLayout || DEFAULT_DASHBOARD_LAYOUT);
+        
+        // Возвращаем обычные имена пользователей
+        setUserDetails(USER_DETAILS);
+        
+        // Очищаем "резервную копию"
+        setRealData(null);
+      }
+      
+      return newMode;
+    });
   };
 
   const forceSync = async () => {
@@ -183,13 +283,59 @@ const App: React.FC = () => {
   };
 
   const handleResetData = async () => {
-    if (window.confirm('Вы уверены, что хотите удалить все данные? Это действие необратимо.')) {
+    // Шаг 1: Запрос пароля
+    const password = prompt('Для удаления всех данных введите пароль от вашего профиля:');
+    if (!password) return;
+    
+    try {
+      // Проверяем пароль
+      const verifyResponse = await api.post('/auth/verify-password', { password });
+      if (!verifyResponse.data.valid) {
+        alert('Неверный пароль. Операция отменена.');
+        return;
+      }
+      
+      // Шаг 2: Подтверждение
+      if (!window.confirm('Вы уверены, что хотите удалить все данные? Это действие необратимо.')) {
+        return;
+      }
+      
+      // Шаг 3: Подтверждение всех пользователей (если есть другие)
       try {
-        await api.delete('/family/data');
-        await loadDataFromServer();
-        alert('Все данные были сброшены.');
+        const membersResponse = await api.get('/family/members');
+        const members = membersResponse.data || [];
+        if (members.length > 1) {
+          const confirmedMembers = new Set<string>();
+          confirmedMembers.add(currentUser.id);
+          
+          for (const member of members) {
+            if (member.id !== currentUser.id) {
+              const memberConfirm = confirm(`Пользователь ${member.name} должен подтвердить удаление данных. Продолжить?`);
+              if (memberConfirm) {
+                confirmedMembers.add(member.id);
+              }
+            }
+          }
+          
+          if (confirmedMembers.size < members.length) {
+            alert('Не все пользователи подтвердили удаление. Операция отменена.');
+            return;
+          }
+        }
       } catch (error) {
-        console.error('Ошибка удаления данных:', error);
+        console.error('Ошибка проверки членов семьи:', error);
+      }
+      
+      // Удаляем данные
+      await api.delete('/family/data');
+      await loadDataFromServer();
+      alert('Все данные были сброшены.');
+    } catch (error: any) {
+      console.error('Ошибка удаления данных:', error);
+      if (error.response?.status === 401) {
+        alert('Неверный пароль. Операция отменена.');
+      } else {
+        alert('Произошла ошибка при удалении данных.');
       }
     }
   };
@@ -279,8 +425,10 @@ const handleRegister = async (newUserInfo: any) => {
     setDashboardLayout(DEFAULT_DASHBOARD_LAYOUT);
   };
 
-  const addTransaction = (transaction: Omit<Transaction, 'id'>, sourceId?: string) => {
-    setTransactions(prev => [{ ...transaction, id: new Date().toISOString() + Math.random() }, ...prev]);
+  const addTransaction = async (transaction: Omit<Transaction, 'id'>, sourceId?: string) => {
+    const newTransaction = { ...transaction, id: new Date().toISOString() + Math.random() };
+    const updatedTransactions = [newTransaction, ...transactions];
+    setTransactions(updatedTransactions);
     if (sourceId) {
         if (plannedExpenses.some(p => p.id === sourceId)) {
             deletePlannedExpense(sourceId);
@@ -288,14 +436,40 @@ const handleRegister = async (newUserInfo: any) => {
             deleteGoal(sourceId);
         }
     }
+    // Сохраняем на сервер сразу после добавления с обновленными данными
+    if (!isDemoMode) {
+      try {
+        await saveDataToServer({ transactions: updatedTransactions });
+      } catch (error) {
+        console.error('Ошибка сохранения транзакции на сервер:', error);
+      }
+    }
   };
   
-  const updateTransaction = (updatedTransaction: Transaction) => {
-    setTransactions(prev => prev.map(tx => tx.id === updatedTransaction.id ? updatedTransaction : tx));
+  const updateTransaction = async (updatedTransaction: Transaction) => {
+    const updatedTransactions = transactions.map(tx => tx.id === updatedTransaction.id ? updatedTransaction : tx);
+    setTransactions(updatedTransactions);
+    // Сохраняем на сервер сразу после обновления с обновленными данными
+    if (!isDemoMode) {
+      try {
+        await saveDataToServer({ transactions: updatedTransactions });
+      } catch (error) {
+        console.error('Ошибка сохранения обновленной транзакции на сервер:', error);
+      }
+    }
   };
 
-  const deleteTransaction = (id: string) => {
-    setTransactions(prev => prev.filter(tx => tx.id !== id));
+  const deleteTransaction = async (id: string) => {
+    const updatedTransactions = transactions.filter(tx => tx.id !== id);
+    setTransactions(updatedTransactions);
+    // Сохраняем на сервер сразу после удаления с обновленными данными
+    if (!isDemoMode) {
+      try {
+        await saveDataToServer({ transactions: updatedTransactions });
+      } catch (error) {
+        console.error('Ошибка сохранения удаления транзакции на сервер:', error);
+      }
+    }
   };
   
   const handleStartEditTransaction = (transaction: Transaction) => {
@@ -394,6 +568,7 @@ const handleRegister = async (newUserInfo: any) => {
             isSyncing={isSyncing} 
             layout={dashboardLayout}
             onLayoutChange={setDashboardLayout}
+            language={language}
         />;
       case 'transactions':
         return <TransactionList 
@@ -406,6 +581,7 @@ const handleRegister = async (newUserInfo: any) => {
           onEditTransaction={handleStartEditTransaction}
           filters={activeFilters}
           onFilterChange={setActiveFilters}
+          language={language}
         />;
       case 'budget':
         return <BudgetView 
@@ -434,6 +610,7 @@ const handleRegister = async (newUserInfo: any) => {
           onAddPlannedExpense={addPlannedExpense}
           onDeletePlannedExpense={deletePlannedExpense}
           onConvertToTransaction={handleConvertToTransaction}
+          language={language}
         />;
       default:
         return <Dashboard 
@@ -446,6 +623,7 @@ const handleRegister = async (newUserInfo: any) => {
             isSyncing={isSyncing} 
             layout={dashboardLayout}
             onLayoutChange={setDashboardLayout}
+            language={language}
         />;
     }
   };
@@ -470,7 +648,7 @@ const handleRegister = async (newUserInfo: any) => {
     // Когда загрузка завершена, показываем основной интерфейс
     return (
       <div className="min-h-screen flex flex-col font-sans bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
-        <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 p-4 flex justify-between items-center sticky top-0 z-40">
+        <header className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50 p-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
           <div className="flex items-center">
               <button onClick={() => setIsSideMenuOpen(true)} className="w-10 h-10 flex items-center justify-center text-lg text-gray-600 dark:text-gray-300 mr-2">
                   <i className="fas fa-bars"></i>
@@ -487,9 +665,6 @@ const handleRegister = async (newUserInfo: any) => {
                   </span>
               )}
           </div>
-          <div className={`w-10 h-10 rounded-full ${userDetails[currentUser.id]?.color || 'bg-gray-500'} text-white flex items-center justify-center text-lg shadow-inner`}>
-              {userDetails[currentUser.id]?.avatar || currentUser.avatar}
-          </div>
         </header>
 
         <SideMenu 
@@ -505,11 +680,10 @@ const handleRegister = async (newUserInfo: any) => {
           onReset={handleResetData}
           isDemoMode={isDemoMode}
           onToggleDemoMode={toggleDemoMode}
-          language={language}
-          activeCurrencies={activeCurrencies}
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           onLogout={handleLogout}
-         />
+          language={language}
+        />
         
         <main className="flex-grow pb-24">
           {renderView()}
@@ -526,6 +700,8 @@ const handleRegister = async (newUserInfo: any) => {
           expenseCategories={expenseCategories}
           incomeCategories={incomeCategories}
           userDetails={userDetails}
+          activeCurrencies={activeCurrencies}
+          language={language}
         />
 
         <AddPaymentMethodModal
@@ -545,10 +721,10 @@ const handleRegister = async (newUserInfo: any) => {
           onCurrenciesChange={setActiveCurrencies}
         />
 
-        <div className="fixed bottom-0 left-0 right-0 h-20 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 z-40">
+        <div className="fixed bottom-0 left-0 right-0 h-20 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 z-40 shadow-lg">
           <div className="flex justify-around items-center h-full max-w-lg mx-auto">
             <div className="w-1/5 h-full"><NavItem view="dashboard" label="Главная" icon="fa-chart-pie" /></div>
-            <div className="w-1/5 h-full"><NavItem view="transactions" label="Операции" icon="fa-list-ul" /></div>
+            <div className="w-1/5 h-full"><NavItem view="transactions" label="Мониторинг" icon="fa-list-ul" /></div>
 
             <div className="w-1/5 h-full flex justify-center">
               <button 
@@ -572,9 +748,9 @@ const handleRegister = async (newUserInfo: any) => {
       <Routes>
         {/* Адрес для страницы-приглашения */}
         <Route 
-  path="/join" 
-  element={<JoinPage isLoggedIn={!!currentUser} token={localStorage.getItem('authToken')} />} 
-/>
+          path="/join" 
+          element={<JoinPage isLoggedIn={!!currentUser} token={typeof window !== 'undefined' ? localStorage.getItem('authToken') : null} />} 
+        />
 
         {/* Адрес для страницы входа */}
         <Route 

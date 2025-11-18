@@ -8,9 +8,15 @@ const api = axios.create({
 
 // "Перехватчик" запросов: добавляет токен авторизации перед отправкой
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('authToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (typeof window !== 'undefined') {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // Игнорируем ошибки localStorage
+    }
   }
   return config;
 });

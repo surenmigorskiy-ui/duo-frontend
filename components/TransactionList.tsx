@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Transaction, Category, User, DateRangePreset, PaymentMethodType, CustomDateRange, PaymentMethod, UserDetails } from '../types';
+import { Transaction, Category, User, DateRangePreset, PaymentMethodType, CustomDateRange, PaymentMethod, UserDetails, Language } from '../types';
+import { useTranslation } from '../hooks/useTranslation';
 
 const PAYMENT_METHOD_TYPES: PaymentMethodType[] = ['Card', 'Cash', 'Bank Account'];
 
@@ -17,6 +18,7 @@ interface TransactionListProps {
   onEditTransaction: (transaction: Transaction) => void;
   filters: ActiveFilters;
   onFilterChange: (filters: ActiveFilters) => void;
+  language: Language;
 }
 
 const TransactionItem: React.FC<{ 
@@ -28,12 +30,37 @@ const TransactionItem: React.FC<{
     onEdit: (transaction: Transaction) => void,
     isExpanded: boolean;
     onExpand: () => void;
-}> = ({ transaction, paymentMethod, categories, userDetails, onDelete, onEdit, isExpanded, onExpand }) => {
+    language: Language;
+}> = ({ transaction, paymentMethod, categories, userDetails, onDelete, onEdit, isExpanded, onExpand, language }) => {
+    const t = useTranslation(language);
     const isExpense = transaction.type === 'expense';
     const categoryInfo = categories.find(c => c.name === transaction.category);
     const subCategoryInfo = categoryInfo?.subCategories?.find(sc => sc.name === transaction.subCategory);
     const icon = subCategoryInfo?.icon || categoryInfo?.icon || 'fas fa-question-circle';
-    const userInfo = userDetails[transaction.user];
+    // Безопасное извлечение информации о пользователе
+    const userDetail = userDetails?.[transaction.user];
+    let userInfo: { name: string; color: string; avatar: string };
+    
+    if (userDetail) {
+      // Проверяем, что это объект с нужными полями
+      if (typeof userDetail === 'object' && userDetail !== null) {
+        // Если это объект из API (с полями id, email, familyId), извлекаем только нужные поля
+        if ('name' in userDetail && typeof userDetail.name === 'string') {
+          userInfo = {
+            name: userDetail.name,
+            color: ('color' in userDetail && typeof userDetail.color === 'string') ? userDetail.color : 'bg-gray-500',
+            avatar: ('avatar' in userDetail && typeof userDetail.avatar === 'string') ? userDetail.avatar : '👤'
+          };
+        } else {
+          // Если структура неожиданная, используем fallback
+          userInfo = { name: String(transaction.user), color: 'bg-gray-500', avatar: '👤' };
+        }
+      } else {
+        userInfo = { name: String(transaction.user), color: 'bg-gray-500', avatar: '👤' };
+      }
+    } else {
+      userInfo = { name: String(transaction.user), color: 'bg-gray-500', avatar: '👤' };
+    }
     const spoilerContentRef = useRef<HTMLDivElement>(null);
     const [spoilerHeight, setSpoilerHeight] = useState(0);
     
@@ -58,44 +85,44 @@ const TransactionItem: React.FC<{
 
     return (
         <li className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-             <div className="p-4">
-                <div className="flex items-center space-x-4 cursor-pointer" onClick={onExpand}>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-xl flex-shrink-0`}>
+             <div className="p-2.5">
+                <div className="flex items-center space-x-3 cursor-pointer" onClick={onExpand}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-sm flex-shrink-0`}>
                         <i className={`${icon} text-gray-500 dark:text-gray-400`}></i>
                     </div>
-                    <div className="flex-grow min-w-0">
-                        <p className="font-bold text-gray-800 dark:text-gray-100">{transaction.description}</p>
-                         <div className="mt-1.5">
-                            <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded-md">{transaction.subCategory || transaction.category}</span>
+                    <div className="flex-grow min-w-0 overflow-hidden">
+                        <p className="font-medium text-xs text-gray-800 dark:text-gray-100 truncate">{transaction.description}</p>
+                         <div className="mt-1">
+                            <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded-md">{transaction.subCategory || transaction.category}</span>
                         </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                        <p className={`font-mono ${amountColor} text-lg font-semibold whitespace-nowrap`}>{amountPrefix}{Math.round(transaction.amount).toLocaleString('ru-RU')} сум</p>
-                        <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{new Date(transaction.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className={`font-mono ${amountColor} text-xs font-semibold whitespace-nowrap`}>{amountPrefix}{Math.round(transaction.amount).toLocaleString('ru-RU')}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{new Date(transaction.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                 </div>
                 <div 
                     className={`spoiler ${isExpanded ? 'expanded' : ''}`}
                     style={{ maxHeight: `${spoilerHeight}px` }}
                 >
-                    <div ref={spoilerContentRef} className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
-                         <div className="text-xs text-gray-400 dark:text-gray-500 space-y-2 pl-14">
-                            <p><span className="font-semibold w-24 inline-block">Категория:</span> {transaction.category}</p>
-                            {transaction.subCategory && <p><span className="font-semibold w-24 inline-block">Подкатегория:</span> {transaction.subCategory}</p>}
-                            <div className="flex items-center">
-                                <span className="font-semibold w-24 inline-block">Пользователь:</span>
+                    <div ref={spoilerContentRef} className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
+                         <div className="text-xs text-gray-400 dark:text-gray-500 space-y-1.5 pl-11 max-h-48 overflow-y-auto">
+                            <p className="break-words"><span className="font-semibold w-24 inline-block">{t('transactions.category')}:</span> <span className="break-words">{transaction.category}</span></p>
+                            {transaction.subCategory && <p className="break-words"><span className="font-semibold w-24 inline-block">{t('transactions.subCategory')}:</span> <span className="break-words">{transaction.subCategory}</span></p>}
+                            <div className="flex items-center flex-wrap">
+                                <span className="font-semibold w-24 inline-block">{t('transactions.user')}:</span>
                                 <span className={`px-2 py-0.5 rounded-full text-white text-opacity-80 text-xs ${userInfo.color}`}>{userInfo.name}</span>
                             </div>
-                            {isExpense && <p><span className="font-semibold w-24 inline-block">Приоритет:</span><span className={`w-2 h-2 rounded-full mr-1.5 inline-block ${priorityColorClass}`}></span>{transaction.priority === 'must-have' ? 'Обязательный' : 'Желательный'}</p>}
-                            {paymentMethod && <p><span className="font-semibold w-24 inline-block">Счет:</span> {paymentMethod.name}</p>}
-                            <p><span className="font-semibold w-24 inline-block">Дата и время:</span> {new Date(transaction.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                            {isExpense && <p className="break-words"><span className="font-semibold w-24 inline-block">{t('transactions.priority')}:</span><span className={`w-2 h-2 rounded-full mr-1.5 inline-block ${priorityColorClass}`}></span>{transaction.priority === 'must-have' ? t('transactions.mustHave') : t('transactions.niceToHave')}</p>}
+                            {paymentMethod && <p className="break-words"><span className="font-semibold w-24 inline-block">{t('transactions.account')}:</span> <span className="break-words">{paymentMethod.name}</span></p>}
+                            <p className="break-words"><span className="font-semibold w-24 inline-block">{t('transactions.dateTime')}:</span> {new Date(transaction.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
-                        <div className="flex items-center justify-end space-x-2 mt-3">
-                            <button onClick={() => onEdit(transaction)} className="btn-press text-gray-500 dark:text-gray-400 hover:text-teal-500 dark:hover:text-teal-400 transition-colors py-1 px-3 text-sm rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">
-                                <i className="fas fa-pencil-alt mr-1"></i> Изменить
+                        <div className="flex items-center justify-end space-x-1.5 mt-3 flex-wrap gap-1 sticky bottom-0 bg-white dark:bg-gray-800 pt-2 border-t border-gray-100 dark:border-gray-700">
+                            <button onClick={(e) => { e.stopPropagation(); onEdit(transaction); }} className="btn-press text-gray-500 dark:text-gray-400 hover:text-teal-500 dark:hover:text-teal-400 transition-colors py-1.5 px-2.5 text-xs rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 whitespace-nowrap z-10">
+                                <i className="fas fa-pencil-alt mr-1"></i> {t('transactions.edit')}
                             </button>
-                            <button onClick={() => onDelete(transaction.id)} className="btn-press text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors py-1 px-3 text-sm rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">
-                                <i className="fas fa-trash-alt mr-1"></i> Удалить
+                            <button onClick={(e) => { e.stopPropagation(); onDelete(transaction.id); }} className="btn-press text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors py-1.5 px-2.5 text-xs rounded-md bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 whitespace-nowrap z-10">
+                                <i className="fas fa-trash-alt mr-1"></i> {t('transactions.delete')}
                             </button>
                         </div>
                     </div>
@@ -130,8 +157,8 @@ const CategoryFilterItem: React.FC<{
             </div>
             {isExpanded && hasSubcategories && (
                 <div className="pl-6 mt-1 space-y-1 border-l-2 border-gray-200 dark:border-gray-600 ml-3">
-                    {category.subCategories?.map(sub => (
-                         <label key={sub.id} className="flex items-center space-x-2 text-sm cursor-pointer p-1">
+                    {category.subCategories?.map((sub, index) => (
+                         <label key={`${category.id}-${sub.id}-${index}`} className="flex items-center space-x-2 text-sm cursor-pointer p-1">
                             <input type="checkbox" checked={selectedSubCategories.includes(sub.name)} onChange={() => onSubCategoryToggle(sub.name)} className="rounded text-teal-500 focus:ring-teal-500"/>
                             <span>{sub.name}</span>
                         </label>
@@ -142,7 +169,8 @@ const CategoryFilterItem: React.FC<{
     );
 };
 
-const TransactionList: React.FC<TransactionListProps> = ({ transactions, paymentMethods, expenseCategories, incomeCategories, userDetails, onDeleteTransaction, onEditTransaction, filters, onFilterChange }) => {
+const TransactionList: React.FC<TransactionListProps> = ({ transactions, paymentMethods, expenseCategories, incomeCategories, userDetails, onDeleteTransaction, onEditTransaction, filters, onFilterChange, language }) => {
+    const t = useTranslation(language);
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedSubCategories, setSelectedSubCategories] = useState<string[]>([]);
@@ -152,12 +180,18 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
     const [showFilters, setShowFilters] = useState(false);
     const filterPanelRef = useRef<HTMLDivElement>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [showAllCategories, setShowAllCategories] = useState(false);
     
     const paymentMethodMap = useMemo(() => {
         return new Map(paymentMethods.map(pm => [pm.id, pm]));
     }, [paymentMethods]);
 
-    const allCategories = useMemo(() => [...expenseCategories, ...incomeCategories].sort((a,b) => a.name.localeCompare(b.name)), [expenseCategories, incomeCategories]);
+    const allCategories = useMemo(() => {
+        // Объединяем категории с уникальными ключами
+        const expenseWithType = expenseCategories.map(cat => ({ ...cat, _type: 'expense', _uniqueId: `expense-${cat.id}` }));
+        const incomeWithType = incomeCategories.map(cat => ({ ...cat, _type: 'income', _uniqueId: `income-${cat.id}` }));
+        return [...expenseWithType, ...incomeWithType].sort((a,b) => a.name.localeCompare(b.name));
+    }, [expenseCategories, incomeCategories]);
 
     const sortedTransactions = useMemo(() => 
         [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
@@ -169,9 +203,33 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                 setShowFilters(false);
             }
         };
+        const handleScroll = (event: Event) => {
+            // Проверяем, что скролл происходит вне панели фильтров
+            const target = event.target as HTMLElement;
+            if (!filterPanelRef.current) return;
+            
+            // Проверяем, что скролл не внутри панели фильтров
+            let isInsideFilter = false;
+            let current: HTMLElement | null = target;
+            while (current && current !== document.body) {
+                if (current === filterPanelRef.current) {
+                    isInsideFilter = true;
+                    break;
+                }
+                current = current.parentElement;
+            }
+            
+            // Закрываем фильтр только если скролл происходит вне его
+            if (!isInsideFilter) {
+                setShowFilters(false);
+            }
+        };
         document.addEventListener('mousedown', handleClickOutside);
+        // Используем capture phase для перехвата всех событий скролла
+        document.addEventListener('scroll', handleScroll, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('scroll', handleScroll, true);
         };
     }, []);
 
@@ -275,7 +333,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
   return (
     <div className="p-4 md:p-6 text-gray-900 dark:text-gray-100">
         <div className="mb-6">
-            <h2 className="text-2xl font-bold mb-4">Мониторинг</h2>
+            <h2 className="text-xl font-bold mb-3">{t('transactions.title')}</h2>
             <div className="flex gap-3 items-end">
                 <div className="relative flex-grow">
                     <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Период</label>
@@ -308,27 +366,35 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                 <div className="relative flex-shrink-0">
                     <button onClick={() => setShowFilters(!showFilters)} className="w-full bg-gray-100 dark:bg-gray-700 border border-transparent rounded-md p-2 text-sm flex justify-between items-center h-full btn-press">
                         <i className="fas fa-filter mr-2"></i>
-                        <span>Фильтры</span>
+                        <span>{t('transactions.filter')}</span>
                         {activeFilterCount > 0 && <span className="ml-2 bg-teal-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{activeFilterCount}</span>}
                     </button>
                     {showFilters && (
-                        <div ref={filterPanelRef} className="absolute top-full mt-2 right-0 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 p-4 animate-slide-in">
-                           <div className="max-h-96 overflow-y-auto pr-2 space-y-4">
+                        <div 
+                            ref={filterPanelRef} 
+                            className="absolute top-full mt-2 right-0 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 p-4 animate-slide-in"
+                            onWheel={(e) => e.stopPropagation()}
+                        >
+                           <div 
+                               className="max-h-96 overflow-y-auto pr-2 space-y-4"
+                               onWheel={(e) => e.stopPropagation()}
+                               onScroll={(e) => e.stopPropagation()}
+                           >
                                 <div>
                                     <h4 className="font-semibold text-sm mb-2">Пользователи</h4>
-                                    {(['Suren', 'Alena', 'shared'] as User[]).map(user => (
+                                    {userDetails && Object.keys(userDetails).filter(user => userDetails[user as User]).map(user => (
                                         <label key={user} className="flex items-center space-x-2 text-sm cursor-pointer p-1">
-                                            <input type="checkbox" checked={selectedUsers.includes(user)} onChange={() => handleUserToggle(user)} className="rounded text-teal-500 focus:ring-teal-500"/>
-                                            <span>{userDetails[user].name}</span>
+                                            <input type="checkbox" checked={selectedUsers.includes(user as User)} onChange={() => handleUserToggle(user as User)} className="rounded text-teal-500 focus:ring-teal-500"/>
+                                            <span>{userDetails[user as User]?.name || user}</span>
                                         </label>
                                     ))}
                                 </div>
                                 <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
                                     <h4 className="font-semibold text-sm mb-2">Категории</h4>
                                     <div className="space-y-1">
-                                       {allCategories.map(cat => (
+                                       {(showAllCategories ? allCategories : allCategories.slice(0, 6)).map((cat, index) => (
                                           <CategoryFilterItem 
-                                            key={cat.id}
+                                            key={cat._uniqueId || `${cat._type}-${cat.id}-${index}`}
                                             category={cat}
                                             selectedCategories={selectedCategories}
                                             selectedSubCategories={selectedSubCategories}
@@ -336,6 +402,14 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                                             onSubCategoryToggle={handleSubCategoryToggle}
                                           />
                                        ))}
+                                       {allCategories.length > 6 && (
+                                          <button 
+                                            onClick={() => setShowAllCategories(!showAllCategories)}
+                                            className="w-full text-left text-xs text-teal-500 hover:text-teal-600 dark:hover:text-teal-400 mt-2 p-1 font-medium"
+                                          >
+                                            {showAllCategories ? t('transactions.hide') : t('transactions.showAll')} ({allCategories.length - 6})
+                                          </button>
+                                       )}
                                     </div>
                                 </div>
                                 <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
@@ -357,12 +431,12 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
 
         <div className="flex justify-around text-center mb-6 space-x-4">
              <button onClick={() => onFilterChange({ ...filters, type: filters.type === 'income' ? null : 'income' })} className={`p-4 rounded-lg w-full transition-all duration-300 ${filters.type === 'income' ? 'bg-green-100 dark:bg-green-500/20 ring-2 ring-green-400 transform scale-105' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Доход за период</p>
-                <p className="text-lg font-bold text-green-500">+{Math.round(totalIncome).toLocaleString('ru-RU')} сум</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('transactions.incomeForPeriod')}</p>
+                <p className="text-sm font-bold text-green-500">+{Math.round(totalIncome).toLocaleString('ru-RU')}</p>
             </button>
             <button onClick={() => onFilterChange({ ...filters, type: filters.type === 'expense' ? null : 'expense' })} className={`p-4 rounded-lg w-full transition-all duration-300 ${filters.type === 'expense' ? 'bg-red-100 dark:bg-red-500/10 ring-2 ring-red-400 transform scale-105' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Расход за период</p>
-                <p className="text-lg font-bold text-red-500">-{Math.round(totalExpense).toLocaleString('ru-RU')} сум</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('transactions.expenseForPeriod')}</p>
+                <p className="text-sm font-bold text-red-500">-{Math.round(totalExpense).toLocaleString('ru-RU')}</p>
             </button>
         </div>
 
@@ -374,7 +448,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                         <div key={groupTitle}>
                             <div className="flex justify-between items-center py-2 px-4 text-sm text-gray-500 dark:text-gray-400">
                                 <h3 className="font-semibold">{groupTitle}</h3>
-                                {dailyExpenseTotal > 0 && <span className="font-mono">-{Math.round(dailyExpenseTotal).toLocaleString('ru-RU')} сум</span>}
+                                {dailyExpenseTotal > 0 && <span className="font-mono">-{Math.round(dailyExpenseTotal).toLocaleString('ru-RU')}</span>}
                             </div>
                             <ul className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 {txs.map(tx => <TransactionItem 
@@ -387,6 +461,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                                     onEdit={onEditTransaction}
                                     isExpanded={tx.id === expandedId}
                                     onExpand={() => setExpandedId(prev => prev === tx.id ? null : tx.id)}
+                                    language={language}
                                 />)}
                             </ul>
                         </div>
