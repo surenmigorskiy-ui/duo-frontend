@@ -2,8 +2,13 @@
 import axios from 'axios';
 
 // Создаем экземпляр axios с базовым URL из переменных окружения
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+// В production используем задеплоенный backend, в development - localhost
+const baseURL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD 
+    ? 'https://expense-app-1c549.et.r.appspot.com/api' 
+    : 'http://localhost:8080/api');
 console.log('API Base URL:', baseURL);
+console.log('Environment:', import.meta.env.MODE);
 
 const api = axios.create({
   baseURL, // Для Vite используем import.meta.env
