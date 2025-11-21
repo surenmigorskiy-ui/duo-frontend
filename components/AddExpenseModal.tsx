@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Transaction, User, Priority, Category, ParsedReceipt, SubCategory, PaymentMethod, UserDetails, Language } from '../types';
-import { parseReceipt } from '../services/geminiService';
+import { parseReceipt, getAutofillSuggestions } from '../services/geminiService';
 import { getCurrencyRate } from '../services/currencyService';
 import { CURRENCIES } from '../constants';
 import { useTranslation } from '../hooks/useTranslation';
@@ -90,9 +90,10 @@ interface AddTransactionModalProps {
   userDetails: UserDetails;
   activeCurrencies?: { [key: string]: boolean };
   language: Language;
+  recentTransactions?: Transaction[];
 }
 
-const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails, activeCurrencies = { SUM: true, USD: true }, language }) => {
+const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails, activeCurrencies = { SUM: true, USD: true }, language, recentTransactions = [] }) => {
   const t = useTranslation(language);
   const [transactionType, setTransactionType] = useState<'expense' | 'income'>('expense');
   const [description, setDescription] = useState('');
@@ -112,6 +113,23 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [currencyRate, setCurrencyRate] = useState<number>(1);
   const [loadingRate, setLoadingRate] = useState(false);
+  const [isAutofilling, setIsAutofilling] = useState(false);
+  const [hasUserEdited, setHasUserEdited] = useState({
+    category: false,
+    subCategory: false,
+    user: false,
+    priority: false,
+    paymentMethodId: false,
+    amount: false
+  });
+  
+  // Обновляем ref при изменении hasUserEdited
+  useEffect(() => {
+    hasUserEditedRef.current = hasUserEdited;
+  }, [hasUserEdited]);
+  const autofillTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSubCategoryRef = useRef<string | null>(null);
+  const hasUserEditedRef = useRef(hasUserEdited);
   
   const isCreatingFromTemplate = transactionToEdit?.id.startsWith('temp-') ?? false;
   const isEditMode = transactionToEdit !== null && !isCreatingFromTemplate;
@@ -142,6 +160,19 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
     setFormErrors({});
     setCurrency('SUM');
     setShowAdvanced(false);
+    setIsAutofilling(false);
+    setHasUserEdited({
+      category: false,
+      subCategory: false,
+      user: false,
+      priority: false,
+      paymentMethodId: false,
+      amount: false
+    });
+    if (autofillTimeoutRef.current) {
+      clearTimeout(autofillTimeoutRef.current);
+      autofillTimeoutRef.current = null;
+    }
   }, [currentUser, paymentMethods]);
 
   useEffect(() => {
@@ -169,11 +200,23 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
     
     // Only auto-select subcategory if the main category has changed
     if (transactionToEdit?.category !== category && subs.length > 0) {
-      setSubCategory(undefined);
+      // Не сбрасываем подкатегорию, если она ожидает установки из автозаполнения
+      if (!pendingSubCategoryRef.current) {
+        setSubCategory(undefined);
+      }
     } else if (isEditMode && transactionToEdit?.category === category){
       setSubCategory(transactionToEdit.subCategory)
     }
 
+    // Если есть ожидающая подкатегория из автозаполнения, устанавливаем её
+    if (pendingSubCategoryRef.current && !hasUserEdited.subCategory) {
+      const foundSubCategory = subs.find(sc => sc.name === pendingSubCategoryRef.current);
+      if (foundSubCategory) {
+        console.log('Устанавливаем ожидающую подкатегорию:', pendingSubCategoryRef.current);
+        setSubCategory(pendingSubCategoryRef.current);
+        pendingSubCategoryRef.current = null;
+      }
+    }
   }, [category, categories, transactionToEdit, isEditMode]);
   
   useEffect(() => {
@@ -195,6 +238,110 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
       setCurrencyRate(1);
     }
   }, [currency]);
+
+  // Автозаполнение при изменении описания
+  useEffect(() => {
+    // Очищаем предыдущий таймер
+    if (autofillTimeoutRef.current) {
+      clearTimeout(autofillTimeoutRef.current);
+    }
+
+    // Если описание слишком короткое или это режим редактирования - не автозаполняем
+    if (!description || description.trim().length < 2 || isEditMode) {
+      return;
+    }
+
+    // Устанавливаем таймер для debounce (800ms)
+    autofillTimeoutRef.current = setTimeout(async () => {
+      setIsAutofilling(true);
+      try {
+        const categories = transactionType === 'expense' ? expenseCategories : incomeCategories;
+        // Собираем все подкатегории из всех категорий
+        const allSubCategories = categories.flatMap(c => c.subCategories || []);
+        const suggestions = await getAutofillSuggestions({
+          description: description.trim(),
+          transactionType,
+          categories: categories,
+          subCategories: allSubCategories,
+          users: Object.keys(userDetails) as User[],
+          paymentMethods: filteredPaymentMethods,
+          recentTransactions: recentTransactions
+        });
+
+        console.log('Получены предложения автозаполнения:', suggestions);
+        console.log('Флаги редактирования:', hasUserEditedRef.current);
+
+        // Используем ref для проверки, чтобы избежать проблем с замыканиями
+        const userEdited = hasUserEditedRef.current;
+
+        // Заполняем только те поля, которые пользователь еще не редактировал
+        if (!userEdited.amount && suggestions.amount !== null && suggestions.amount !== undefined && suggestions.amount > 0) {
+          console.log('Автозаполнение суммы:', suggestions.amount);
+          setAmount(Number(suggestions.amount));
+        }
+        
+        // Сначала устанавливаем категорию, если она предложена
+        if (!userEdited.category && suggestions.category) {
+          const foundCategory = categories.find(c => c.name === suggestions.category);
+          if (foundCategory) {
+            console.log('Автозаполнение категории:', suggestions.category);
+            setCategory(suggestions.category);
+            
+            // Если есть подкатегория, сохраняем её для установки после обновления категории
+            if (!userEdited.subCategory && suggestions.subCategory) {
+              console.log('Сохраняем подкатегорию для установки:', suggestions.subCategory);
+              pendingSubCategoryRef.current = suggestions.subCategory;
+            }
+          }
+        } else if (!userEdited.subCategory && suggestions.subCategory && category) {
+          // Если категория уже выбрана, проверяем подкатегорию сразу
+          const currentCategory = categories.find(c => c.name === category);
+          const currentSubs = currentCategory?.subCategories || [];
+          const foundSubCategory = currentSubs.find(sc => sc.name === suggestions.subCategory);
+          if (foundSubCategory) {
+            console.log('Автозаполнение подкатегории (категория уже выбрана):', suggestions.subCategory);
+            setSubCategory(suggestions.subCategory);
+          } else {
+            // Сохраняем для установки после обновления категории
+            pendingSubCategoryRef.current = suggestions.subCategory;
+          }
+        }
+        
+        if (!userEdited.user && suggestions.user && (suggestions.user === 'Suren' || suggestions.user === 'Alena' || suggestions.user === 'shared')) {
+          console.log('Автозаполнение пользователя:', suggestions.user);
+          setUser(suggestions.user as User);
+        }
+        
+        if (!userEdited.priority && suggestions.priority && transactionType === 'expense') {
+          if (suggestions.priority === 'must-have' || suggestions.priority === 'nice-to-have') {
+            console.log('Автозаполнение приоритета:', suggestions.priority);
+            setPriority(suggestions.priority as Priority);
+          }
+        }
+        
+        if (!userEdited.paymentMethodId && suggestions.paymentMethodId) {
+          const foundPaymentMethod = filteredPaymentMethods.find(pm => pm.id === suggestions.paymentMethodId);
+          if (foundPaymentMethod) {
+            console.log('Автозаполнение способа оплаты:', suggestions.paymentMethodId);
+            setPaymentMethodId(suggestions.paymentMethodId);
+          } else {
+            console.log('Способ оплаты не найден:', suggestions.paymentMethodId);
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка автозаполнения:', error);
+      } finally {
+        setIsAutofilling(false);
+      }
+    }, 800);
+
+    // Очистка при размонтировании
+    return () => {
+      if (autofillTimeoutRef.current) {
+        clearTimeout(autofillTimeoutRef.current);
+      }
+    };
+  }, [description, transactionType, expenseCategories, incomeCategories, category, userDetails, filteredPaymentMethods, recentTransactions, isEditMode]);
 
   const handleClose = () => {
     resetForm();
@@ -296,42 +443,38 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
           </div>
                     
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.category')}</label>
-                <select value={category} onChange={(e) => setCategory(e.target.value)} className={`mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.category ? 'border-red-500' : ''}`}>
-                  <option value="" disabled>Выберите</option>
-                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
-                {formErrors.category && <i className="fas fa-exclamation-circle text-red-500 absolute right-3 top-9"></i>}
-              </div>
-              {availableSubCategories.length > 0 && (
-                 <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.subCategory')}</label>
-                    <select value={subCategory} onChange={(e) => setSubCategory(e.target.value)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
-                      <option value="">Выберите</option>
-                      {availableSubCategories.map(sc => <option key={sc.id} value={sc.name}>{sc.name}</option>)}
-                    </select>
-                </div>
-              )}
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.amount')}</label>
-                <div className="flex mt-1 items-center gap-3">
-                    <div className="relative flex-grow">
-                         <FormattedNumberInput value={amount} onChange={setAmount} className={`block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.amount ? 'border-red-500' : ''}`} required />
-                         {formErrors.amount && <i className="fas fa-exclamation-circle text-red-500 absolute right-3 top-2.5"></i>}
-                    </div>
-                    <CurrencySwitcher currency={currency} onChange={setCurrency} activeCurrencies={activeCurrencies} />
-                </div>
-                 {currency !== 'SUM' && amount && !loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">≈ {Math.round(Number(amount) * currencyRate).toLocaleString('ru-RU')} SUM</p>}
-                 {loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">{t('forms.loadingRate')}</p>}
-            </div>
-
             <div className="relative">
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.description')}</label>
-              <div className="flex items-center mt-1">
-                <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Название магазина или товара..." className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" />
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 flex items-center gap-2">
+                {t('forms.description')}
+                <i className="fas fa-brain text-teal-500 text-xs"></i>
+              </label>
+              <div className="relative flex items-center mt-1">
+                <input 
+                  type="text" 
+                  value={description} 
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setDescription(value);
+                    // Сбрасываем флаги редактирования при очистке
+                    if (value.length === 0) {
+                      setHasUserEdited({
+                        category: false,
+                        subCategory: false,
+                        user: false,
+                        priority: false,
+                        paymentMethodId: false,
+                        amount: false
+                      });
+                    }
+                  }}
+                  placeholder="Название магазина или товара..." 
+                  className="block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 pr-10" 
+                />
+                {isAutofilling && !isEditMode && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Spinner size="sm" />
+                  </div>
+                )}
                 {transactionType === 'expense' && !isEditMode && (
                   <div className="flex items-center ml-2 space-x-1">
                       <label htmlFor="receipt-upload-camera" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700/80 rounded-full cursor-pointer transition-colors">
@@ -346,7 +489,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                 )}
               </div>
             </div>
-             {receiptFile && transactionType === 'expense' && (
+            {receiptFile && transactionType === 'expense' && (
               <div className="text-center">
                 <p className="text-sm text-gray-500 dark:text-gray-400 truncate mb-2">Выбран файл: {receiptFile.name}</p>
                 <button type="button" onClick={handleParseReceipt} disabled={isParsing} className="w-full bg-teal-500 text-white py-2 px-4 rounded-md hover:bg-teal-600 disabled:bg-teal-300 flex items-center justify-center">
@@ -355,6 +498,59 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                 {parseError && <p className="text-sm text-center text-red-500 mt-2">{parseError}</p>}
               </div>
             )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.category')}</label>
+                <select 
+                  value={category} 
+                  onChange={(e) => {
+                    setCategory(e.target.value);
+                    setHasUserEdited(prev => ({ ...prev, category: true }));
+                  }} 
+                  className={`mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.category ? 'border-red-500' : ''}`}
+                >
+                  <option value="" disabled>Выберите</option>
+                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+                {formErrors.category && <i className="fas fa-exclamation-circle text-red-500 absolute right-3 top-9"></i>}
+              </div>
+              {availableSubCategories.length > 0 && (
+                 <div>
+                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.subCategory')}</label>
+                    <select 
+                      value={subCategory} 
+                      onChange={(e) => {
+                        setSubCategory(e.target.value);
+                        setHasUserEdited(prev => ({ ...prev, subCategory: true }));
+                      }} 
+                      className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+                    >
+                      <option value="">Выберите</option>
+                      {availableSubCategories.map(sc => <option key={sc.id} value={sc.name}>{sc.name}</option>)}
+                    </select>
+                </div>
+              )}
+            </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.amount')}</label>
+                <div className="flex mt-1 items-center gap-3">
+                    <div className="relative flex-grow">
+                         <FormattedNumberInput 
+                           value={amount} 
+                           onChange={(value) => {
+                             setAmount(value);
+                             setHasUserEdited(prev => ({ ...prev, amount: true }));
+                           }} 
+                           className={`block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 ${formErrors.amount ? 'border-red-500' : ''}`} 
+                           required 
+                         />
+                         {formErrors.amount && <i className="fas fa-exclamation-circle text-red-500 absolute right-3 top-2.5"></i>}
+                    </div>
+                    <CurrencySwitcher currency={currency} onChange={setCurrency} activeCurrencies={activeCurrencies} />
+                </div>
+                 {currency !== 'SUM' && amount && !loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">≈ {Math.round(Number(amount) * currencyRate).toLocaleString('ru-RU')} SUM</p>}
+                 {loadingRate && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">{t('forms.loadingRate')}</p>}
+            </div>
 
 
             <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-teal-500 dark:text-teal-400 font-medium flex items-center space-x-2">
@@ -370,7 +566,14 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.account')}</label>
-                            <select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
+                            <select 
+                              value={paymentMethodId} 
+                              onChange={(e) => {
+                                setPaymentMethodId(e.target.value);
+                                setHasUserEdited(prev => ({ ...prev, paymentMethodId: true }));
+                              }} 
+                              className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs"
+                            >
                             <option value="">Не выбрано</option>
                             {filteredPaymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name} ({userDetails[pm.owner]?.name || pm.owner})</option>)}
                             </select>
@@ -379,7 +582,14 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                     <div className={`grid ${transactionType === 'expense' ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
                         <div>
                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">Чей {transactionType === 'expense' ? 'расход' : 'доход'}</label>
-                            <select value={user} onChange={(e) => setUser(e.target.value as User)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
+                            <select 
+                              value={user} 
+                              onChange={(e) => {
+                                setUser(e.target.value as User);
+                                setHasUserEdited(prev => ({ ...prev, user: true }));
+                              }} 
+                              className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs"
+                            >
                                 {userDetails && Object.keys(userDetails).map((userId) => (
                                     <option key={userId} value={userId}>{userDetails[userId as User]?.name || userId}</option>
                                 ))}
@@ -388,7 +598,14 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                         {transactionType === 'expense' && (
                         <div>
                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-300">{t('forms.priority')}</label>
-                            <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs">
+                            <select 
+                              value={priority} 
+                              onChange={(e) => {
+                                setPriority(e.target.value as Priority);
+                                setHasUserEdited(prev => ({ ...prev, priority: true }));
+                              }} 
+                              className="mt-1 block w-full bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-xs"
+                            >
                                 <option value="must-have">{t('transactions.mustHave')}</option>
                                 <option value="nice-to-have">{t('transactions.niceToHave')}</option>
                             </select>

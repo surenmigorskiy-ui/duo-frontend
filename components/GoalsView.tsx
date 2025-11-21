@@ -140,7 +140,7 @@ const GoalsContent: React.FC<Pick<GoalsViewProps, 'goals' | 'onAddGoal' | 'onDel
     return (
         <div ref={viewRef} className="space-y-6">
             <div className="flex bg-gray-100 dark:bg-gray-700/50 rounded-lg p-1">
-                {(['all', ...(userDetails ? Object.keys(userDetails) : [])] as (User | 'all')[]).map(userKey => (
+                {(['all', ...(userDetails ? Object.keys(userDetails).filter((key) => key !== 'shared') : [])] as (User | 'all')[]).map(userKey => (
                     <button
                         key={userKey}
                         onClick={() => setUserFilter(userKey)}
@@ -344,7 +344,7 @@ const PlannedExpensesContent: React.FC<Pick<GoalsViewProps, 'plannedExpenses' | 
     return (
         <div className="space-y-6">
             <div className="flex bg-gray-100 dark:bg-gray-700/50 rounded-lg p-1">
-                {(['all', ...Object.keys(userDetails)] as (User | 'all')[]).map(userKey => (
+                {(['all', ...Object.keys(userDetails).filter((key) => key !== 'shared')] as (User | 'all')[]).map(userKey => (
                     <button
                         key={userKey}
                         onClick={() => setUserFilter(userKey)}

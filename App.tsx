@@ -51,8 +51,35 @@ const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutItem[] = [
     { id: 'budgetVsActual', visible: true },
     { id: 'paymentMethodSpending', visible: true },
     { id: 'userSpending', visible: true },
+    { id: 'prioritySpending', visible: true },
+    { id: 'monthlyTrend', visible: true },
+    { id: 'weeklySpending', visible: true },
+    { id: 'topTransactions', visible: true },
+    { id: 'subCategorySpending', visible: true },
+    { id: 'plannedVsActual', visible: true },
+    { id: 'goalProgress', visible: true },
+    { id: 'calendarHeatmap', visible: true },
+    { id: 'timeOfDay', visible: true },
+    { id: 'userIncomeExpense', visible: true },
     { id: 'aiAdvisor', visible: true },
 ];
+
+// Функция для объединения существующего layout с дефолтным (добавляет новые графики)
+const mergeDashboardLayout = (existingLayout: DashboardLayoutItem[] | undefined): DashboardLayoutItem[] => {
+  if (!existingLayout) return DEFAULT_DASHBOARD_LAYOUT;
+  
+  const existingIds = new Set(existingLayout.map(item => item.id));
+  const merged = [...existingLayout];
+  
+  // Добавляем новые графики, которых нет в существующем layout
+  DEFAULT_DASHBOARD_LAYOUT.forEach(defaultItem => {
+    if (!existingIds.has(defaultItem.id)) {
+      merged.push(defaultItem);
+    }
+  });
+  
+  return merged;
+};
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -72,7 +99,21 @@ const App: React.FC = () => {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(MOCK_PAYMENT_METHODS);
   const [expenseCategories, setExpenseCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [incomeCategories, setIncomeCategories] = useState<Category[]>(INCOME_CATEGORIES);
-  const [dashboardLayout, setDashboardLayout] = useState<DashboardLayoutItem[]>(DEFAULT_DASHBOARD_LAYOUT);
+  const [dashboardLayout, setDashboardLayout] = useState<DashboardLayoutItem[]>(() => {
+    // При инициализации проверяем localStorage на наличие сохраненного layout
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('dashboardLayout');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return mergeDashboardLayout(parsed);
+        }
+      } catch (e) {
+        console.error('Error loading dashboard layout from localStorage:', e);
+      }
+    }
+    return DEFAULT_DASHBOARD_LAYOUT;
+  });
   
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
@@ -141,6 +182,7 @@ const App: React.FC = () => {
     const viewTitles: { [key in View]: string } = {
       dashboard: 'Обзор',
       transactions: 'Мониторинг',
+      accounts: 'Счета',
       budget: 'Бюджет',
       goals: 'Цели',
     };
@@ -190,7 +232,7 @@ const App: React.FC = () => {
       setPaymentMethods(data.paymentMethods || MOCK_PAYMENT_METHODS);
       setExpenseCategories(data.expenseCategories || DEFAULT_CATEGORIES);
       setIncomeCategories(data.incomeCategories || INCOME_CATEGORIES);
-      setDashboardLayout(data.dashboardLayout || DEFAULT_DASHBOARD_LAYOUT);
+      setDashboardLayout(mergeDashboardLayout(data.dashboardLayout));
 
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
@@ -263,7 +305,7 @@ const App: React.FC = () => {
         setPaymentMethods(realData.paymentMethods);
         setExpenseCategories(realData.expenseCategories);
         setIncomeCategories(realData.incomeCategories);
-        setDashboardLayout(realData.dashboardLayout || DEFAULT_DASHBOARD_LAYOUT);
+        setDashboardLayout(mergeDashboardLayout(realData.dashboardLayout));
         
         // Возвращаем обычные имена пользователей
         setUserDetails(USER_DETAILS);
@@ -562,6 +604,7 @@ const handleRegister = async (newUserInfo: any) => {
             transactions={transactions} 
             budget={budget} 
             plannedExpenses={plannedExpenses} 
+            goals={goals}
             paymentMethods={paymentMethods}
             userDetails={userDetails}
             onNavigateToTransactions={handleNavigateToTransactions} 
@@ -691,6 +734,7 @@ const handleRegister = async (newUserInfo: any) => {
         
         <AddTransactionModal
           isOpen={isTransactionModalOpen}
+          recentTransactions={transactions}
           onClose={handleCloseTransactionModal}
           onAddTransaction={addTransaction}
           onUpdateTransaction={updateTransaction}
