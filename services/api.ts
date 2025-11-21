@@ -3,12 +3,18 @@ import axios from 'axios';
 
 // Создаем экземпляр axios с базовым URL из переменных окружения
 // В production используем задеплоенный backend, в development - localhost
+const isProduction = import.meta.env.MODE === 'production' || 
+                     import.meta.env.PROD || 
+                     window.location.hostname !== 'localhost' && !window.location.hostname.includes('127.0.0.1');
+
 const baseURL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.PROD 
+  (isProduction 
     ? 'https://expense-app-1c549.et.r.appspot.com/api' 
     : 'http://localhost:8080/api');
 console.log('API Base URL:', baseURL);
 console.log('Environment:', import.meta.env.MODE);
+console.log('Is Production:', isProduction);
+console.log('Hostname:', typeof window !== 'undefined' ? window.location.hostname : 'server');
 
 const api = axios.create({
   baseURL, // Для Vite используем import.meta.env
