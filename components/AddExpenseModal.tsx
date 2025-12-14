@@ -91,9 +91,10 @@ interface AddTransactionModalProps {
   activeCurrencies?: { [key: string]: boolean };
   language: Language;
   recentTransactions?: Transaction[];
+  onOpenBulkImport?: () => void;
 }
 
-const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails, activeCurrencies = { SUM: true, USD: true }, language, recentTransactions = [] }) => {
+const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose, onAddTransaction, onUpdateTransaction, currentUser, transactionToEdit, paymentMethods, expenseCategories, incomeCategories, userDetails, activeCurrencies = { SUM: true, USD: true }, language, recentTransactions = [], onOpenBulkImport }) => {
   const t = useTranslation(language);
   const [transactionType, setTransactionType] = useState<'expense' | 'income'>('expense');
   const [description, setDescription] = useState('');
@@ -615,11 +616,27 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                 </div>
             </div>
 
-            <div className="flex justify-end pt-6 space-x-3">
-              <button type="button" onClick={handleClose} className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">{t('forms.cancel')}</button>
-              <button type="submit" disabled={!isFormValid} className="bg-teal-500 text-white font-semibold py-2 px-5 rounded-md hover:bg-teal-600 disabled:bg-teal-300 dark:disabled:bg-teal-800 disabled:cursor-not-allowed">
-                {isEditMode ? t('forms.update') : t('forms.save')}
-              </button>
+            <div className="flex justify-between items-center pt-6">
+              {!isEditMode && onOpenBulkImport && (
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    handleClose();
+                    onOpenBulkImport();
+                  }}
+                  className="text-sm text-teal-500 dark:text-teal-400 hover:text-teal-600 dark:hover:text-teal-300 flex items-center gap-2"
+                >
+                  <i className="fas fa-layer-group"></i>
+                  <span>Массовый импорт</span>
+                </button>
+              )}
+              {isEditMode && <div></div>}
+              <div className="flex space-x-3 ml-auto">
+                <button type="button" onClick={handleClose} className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">{t('forms.cancel')}</button>
+                <button type="submit" disabled={!isFormValid} className="bg-teal-500 text-white font-semibold py-2 px-5 rounded-md hover:bg-teal-600 disabled:bg-teal-300 dark:disabled:bg-teal-800 disabled:cursor-not-allowed">
+                  {isEditMode ? t('forms.update') : t('forms.save')}
+                </button>
+              </div>
             </div>
           </form>
         </div>

@@ -12,6 +12,7 @@ import AddPaymentMethodModal from './components/AddPaymentMethodModal';
 import SideMenu from './components/SideMenu';
 import SettingsModal from './components/SettingsModal';
 import LoginScreen from './components/LoginScreen';
+import BulkImportModal from './components/BulkImportModal';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import JoinPage from './components/JoinPage';
 import api from './services/api'; 
@@ -122,6 +123,8 @@ const App: React.FC = () => {
   const [paymentMethodToEdit, setPaymentMethodToEdit] = useState<PaymentMethod | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeFilters, setActiveFilters] = useState<ActiveFilters>({ type: null });
@@ -222,8 +225,12 @@ const App: React.FC = () => {
   const loadDataFromServer = async () => {
     try {
       setIsLoading(true);
+      console.log('[loadDataFromServer] Загрузка данных с сервера...');
       const response = await api.get('/family/data');
       const data: AppData = response.data;
+      
+      console.log('[loadDataFromServer] Получено транзакций:', data.transactions?.length || 0);
+      console.log('[loadDataFromServer] Пример транзакции:', data.transactions?.[0]);
       
       setTransactions(data.transactions || []);
       setBudget(data.budget || MOCK_BUDGET);
@@ -234,8 +241,10 @@ const App: React.FC = () => {
       setIncomeCategories(data.incomeCategories || INCOME_CATEGORIES);
       setDashboardLayout(mergeDashboardLayout(data.dashboardLayout));
 
+      console.log('[loadDataFromServer] Данные успешно загружены и установлены в state');
+
     } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
+      console.error('[loadDataFromServer] Ошибка загрузки данных:', error);
       alert('Не удалось загрузить данные. Возможно, ваша сессия истекла. Попробуйте войти снова.');
       handleLogout();
     } finally {
@@ -265,6 +274,18 @@ const App: React.FC = () => {
       console.error('Ошибка сохранения данных:', error);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleBulkImportSuccess = async () => {
+    console.log('[handleBulkImportSuccess] Начало обновления данных после импорта...');
+    try {
+      await loadDataFromServer();
+      console.log('[handleBulkImportSuccess] Данные успешно обновлены');
+      alert('Транзакции успешно импортированы!');
+    } catch (error) {
+      console.error('[handleBulkImportSuccess] Ошибка при обновлении данных:', error);
+      alert('Транзакции импортированы, но не удалось обновить список. Попробуйте обновить страницу.');
     }
   };
   
@@ -419,9 +440,13 @@ const handleLogin = async (loginData: any) => {
     // Если кода не было, просто обновляем состояние пользователя
     setCurrentUser(user);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login failed:', error);
-    alert('Неверный email или пароль.');
+    console.error('Error response:', error.response?.data);
+    console.error('Error status:', error.response?.status);
+    const errorMessage = error.response?.data?.error || error.message || 'Неверный email или пароль.';
+    alert(errorMessage);
+    throw error; // Пробрасываем ошибку дальше для обработки в компоненте
   }
 };
   
@@ -733,6 +758,7 @@ const handleRegister = async (newUserInfo: any) => {
         </main>
         
         <AddTransactionModal
+          onOpenBulkImport={() => setIsBulkImportOpen(true)}
           isOpen={isTransactionModalOpen}
           recentTransactions={transactions}
           onClose={handleCloseTransactionModal}
@@ -765,18 +791,35 @@ const handleRegister = async (newUserInfo: any) => {
           onCurrenciesChange={setActiveCurrencies}
         />
 
+        <BulkImportModal
+          isOpen={isBulkImportOpen}
+          onClose={() => setIsBulkImportOpen(false)}
+          onSuccess={handleBulkImportSuccess}
+          currentUser={currentUser}
+          paymentMethods={paymentMethods}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          existingTransactions={transactions}
+          userDetails={userDetails}
+        />
+
         <div className="fixed bottom-0 left-0 right-0 h-20 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-t border-gray-200/50 dark:border-gray-700/50 z-40 shadow-lg">
           <div className="flex justify-around items-center h-full max-w-lg mx-auto">
             <div className="w-1/5 h-full"><NavItem view="dashboard" label="Главная" icon="fa-chart-pie" /></div>
             <div className="w-1/5 h-full"><NavItem view="transactions" label="Мониторинг" icon="fa-list-ul" /></div>
 
-            <div className="w-1/5 h-full flex justify-center">
-              <button 
-                onClick={() => { setTransactionToEdit(null); setIsTransactionModalOpen(true); }}
-                className="w-16 h-16 bg-teal-500 rounded-full text-white flex items-center justify-center -translate-y-6 shadow-lg shadow-teal-500/30 hover:bg-teal-400 transition-transform duration-200 ease-in-out transform hover:scale-110 hover:-translate-y-7 active:scale-95 active:-translate-y-5 btn-press"
-              >
-                <i className="fas fa-plus text-2xl"></i>
-              </button>
+            <div className="w-1/5 h-full flex justify-center relative">
+              <div className="relative">
+                <button 
+                  onClick={() => {
+                    setTransactionToEdit(null);
+                    setIsTransactionModalOpen(true);
+                  }}
+                  className="w-16 h-16 bg-teal-500 rounded-full text-white flex items-center justify-center -translate-y-6 shadow-lg shadow-teal-500/30 hover:bg-teal-400 transition-transform duration-200 ease-in-out transform hover:scale-110 hover:-translate-y-7 active:scale-95 active:-translate-y-5 btn-press"
+                >
+                  <i className="fas fa-plus text-2xl"></i>
+                </button>
+              </div>
             </div>
             <div className="w-1/5 h-full"><NavItem view="budget" label="Бюджет" icon="fa-piggy-bank" /></div>
             <div className="w-1/5 h-full"><NavItem view="goals" label="Цели" icon="fa-bullseye" /></div>

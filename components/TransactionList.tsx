@@ -34,7 +34,8 @@ const TransactionItem: React.FC<{
 }> = ({ transaction, paymentMethod, categories, userDetails, onDelete, onEdit, isExpanded, onExpand, language }) => {
     const t = useTranslation(language);
     const isExpense = transaction.type === 'expense';
-    const categoryInfo = categories.find(c => c.name === transaction.category);
+    // Ищем категорию по ID или по названию
+    const categoryInfo = categories.find(c => c.id === transaction.category || c.name === transaction.category);
     const subCategoryInfo = categoryInfo?.subCategories?.find(sc => sc.name === transaction.subCategory);
     const icon = subCategoryInfo?.icon || categoryInfo?.icon || 'fas fa-question-circle';
     // Безопасное извлечение информации о пользователе
@@ -67,6 +68,12 @@ const TransactionItem: React.FC<{
     const priorityColorClass = isExpense ? (transaction.priority === 'must-have' ? 'bg-orange-400' : 'bg-yellow-400') : '';
     const amountColor = isExpense ? 'text-red-500' : 'text-green-500';
     const amountPrefix = isExpense ? '-' : '+';
+    
+    // Определяем, является ли транзакция массовой (bulk import)
+    const isBulkTransaction = transaction.id?.startsWith('bulk-') || (transaction as any)._importTimestamp;
+    
+    // Определяем, требуется ли ручное редактирование категории
+    const needsCategoryReview = (transaction as any)._needsCategoryReview || !transaction.category || transaction.category === '';
 
     useEffect(() => {
         const el = spoilerContentRef.current;
@@ -84,16 +91,41 @@ const TransactionItem: React.FC<{
     }, [isExpanded]);
 
     return (
-        <li className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+        <li className={`bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${
+            needsCategoryReview 
+                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' 
+                : isBulkTransaction 
+                    ? 'bg-teal-50/30 dark:bg-teal-900/10' 
+                    : ''
+        }`}>
              <div className="p-2.5">
                 <div className="flex items-center space-x-3 cursor-pointer" onClick={onExpand}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-gray-700 text-sm flex-shrink-0`}>
                         <i className={`${icon} text-gray-500 dark:text-gray-400`}></i>
                     </div>
                     <div className="flex-grow min-w-0 overflow-hidden">
-                        <p className="font-medium text-xs text-gray-800 dark:text-gray-100 truncate">{transaction.description}</p>
+                        <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-xs text-gray-800 dark:text-gray-100 truncate flex-1">{transaction.description}</p>
+                            {isBulkTransaction && (
+                                <span 
+                                    className="flex-shrink-0 text-teal-500 dark:text-teal-400" 
+                                    title="Массовый импорт"
+                                >
+                                    <i className="fas fa-layer-group text-xs"></i>
+                                </span>
+                            )}
+                        </div>
                          <div className="mt-1">
-                            <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded-md">{transaction.subCategory || transaction.category}</span>
+                            {needsCategoryReview ? (
+                                <span className="text-xs px-1.5 py-0.5 bg-yellow-200 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200 rounded-md">
+                                    <i className="fas fa-exclamation-triangle mr-1"></i>
+                                    Требуется категория
+                                </span>
+                            ) : (
+                                <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 rounded-md">
+                                    {transaction.subCategory || transaction.category || 'Без категории'}
+                                </span>
+                            )}
                         </div>
                     </div>
                     <div className="text-right flex-shrink-0">

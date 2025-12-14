@@ -42,6 +42,23 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Логируем ошибки для отладки
+    if (error.response) {
+      console.error('API Error Response:', {
+        status: error.response.status,
+        data: error.response.data,
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
+      });
+    } else if (error.request) {
+      console.error('API Error Request:', {
+        message: 'No response received',
+        url: error.config?.url,
+        baseURL: error.config?.baseURL
+      });
+    } else {
+      console.error('API Error:', error.message);
+    }
     // Пробрасываем ошибку дальше с полной информацией
     return Promise.reject(error);
   }

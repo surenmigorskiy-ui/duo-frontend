@@ -37,6 +37,9 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'pets', name: 'Питомцы', icon: 'fas fa-paw', type: 'expense' },
   { id: 'debt', name: 'Кредиты и долги', icon: 'fas fa-credit-card', type: 'expense' },
   { id: 'other', name: 'Другое', icon: 'fas fa-question-circle', type: 'expense' },
+  { id: 'needs-review', name: 'Требуется определить', icon: 'fas fa-exclamation-triangle', type: 'expense', subCategories: [
+      {id: 'needs-review', name: 'Требуется определить', icon: 'fas fa-exclamation-triangle'},
+  ]},
 ];
 
 export const GOAL_CATEGORIES: Category[] = [
