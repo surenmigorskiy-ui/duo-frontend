@@ -79,13 +79,13 @@ const TransactionItem: React.FC<{
                                   transaction.category === 'needs-review' ||
                                   transaction.category === 'Требуется определить';
     
-    // Проверяем флаг _needsCategoryReview, но только если категория действительно "Требуется определить"
-    // Если выбрана нормальная категория (например, "Еда"), то флаг игнорируется
+    // Проверяем флаг _needsCategoryReview
     const hasNeedsReviewFlag = (transaction as any)._needsCategoryReview === true;
     
     // Транзакция нуждается в категории если:
     // 1. Категория "Требуется определить" или пустая ИЛИ
-    // 2. Есть флаг _needsCategoryReview И категория все еще "Требуется определить"
+    // 2. Есть флаг _needsCategoryReview (даже если категория была изменена, но флаг не удален)
+    // Но если выбрана нормальная категория (например, "Еда"), то не нуждается в категории
     const needsCategoryReview = isNeedsReviewCategory || (hasNeedsReviewFlag && isNeedsReviewCategory);
 
     useEffect(() => {

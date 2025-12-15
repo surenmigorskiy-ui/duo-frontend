@@ -480,7 +480,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
       const finalAmount = currency === 'SUM' ? Number(amount) : Number(amount) * currencyRate;
 
       // Проверяем, является ли выбранная категория "Требуется определить"
-      const isNeedsReviewCategory = category === 'needs-review' || category === 'Требуется определить';
+      const isNeedsReviewCategory = category === 'needs-review' || category === 'Требуется определить' || !category || category.trim() === '';
       
       const transactionData: any = {
           description: description || category,
@@ -496,7 +496,11 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
 
       // Если выбрана нормальная категория (не "Требуется определить"), удаляем флаг _needsCategoryReview
       if (!isNeedsReviewCategory) {
-          transactionData._needsCategoryReview = false;
+          // Полностью удаляем свойство, а не устанавливаем в false
+          delete transactionData._needsCategoryReview;
+      } else {
+          // Если категория "Требуется определить", устанавливаем флаг
+          transactionData._needsCategoryReview = true;
       }
 
       if (isEditMode && transactionToEdit) {
