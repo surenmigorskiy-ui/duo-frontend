@@ -73,11 +73,18 @@ const TransactionItem: React.FC<{
     const isBulkTransaction = transaction.id?.startsWith('bulk-') || (transaction as any)._importTimestamp;
     
     // Определяем, требуется ли ручное редактирование категории
-    const needsCategoryReview = (transaction as any)._needsCategoryReview || 
-                                !transaction.category || 
-                                transaction.category === '' ||
-                                transaction.category === 'needs-review' ||
-                                transaction.category === 'Требуется определить';
+    // Проверяем флаг _needsCategoryReview
+    const hasNeedsReviewFlag = (transaction as any)._needsCategoryReview === true;
+    
+    // Проверяем, является ли категория "Требуется определить" или пустой
+    const isNeedsReviewCategory = !transaction.category || 
+                                  transaction.category === '' ||
+                                  transaction.category === 'needs-review' ||
+                                  transaction.category === 'Требуется определить';
+    
+    // Транзакция нуждается в категории только если есть флаг ИЛИ категория "Требуется определить"
+    // Если выбрана нормальная категория (например, "Еда"), то не нуждается в категории
+    const needsCategoryReview = hasNeedsReviewFlag && isNeedsReviewCategory;
 
     useEffect(() => {
         const el = spoilerContentRef.current;

@@ -514,7 +514,19 @@ const handleRegister = async (newUserInfo: any) => {
   };
   
   const updateTransaction = async (updatedTransaction: Transaction) => {
-    const updatedTransactions = transactions.map(tx => tx.id === updatedTransaction.id ? updatedTransaction : tx);
+    // Проверяем, является ли категория "Требуется определить"
+    const isNeedsReviewCategory = updatedTransaction.category === 'needs-review' || 
+                                  updatedTransaction.category === 'Требуется определить' ||
+                                  !updatedTransaction.category ||
+                                  updatedTransaction.category.trim() === '';
+    
+    // Если выбрана нормальная категория, удаляем флаг _needsCategoryReview
+    const cleanedTransaction: Transaction = { ...updatedTransaction };
+    if (!isNeedsReviewCategory && (cleanedTransaction as any)._needsCategoryReview) {
+      delete (cleanedTransaction as any)._needsCategoryReview;
+    }
+    
+    const updatedTransactions = transactions.map(tx => tx.id === cleanedTransaction.id ? cleanedTransaction : tx);
     setTransactions(updatedTransactions);
     // Сохраняем на сервер сразу после обновления с обновленными данными
     if (!isDemoMode) {
