@@ -81,6 +81,7 @@ export interface ParsedReceipt {
   amount: number;
   category: string;
   date: string; // YYYY-MM-DD
+  time?: string; // HH:MM
   description: string;
 }
 

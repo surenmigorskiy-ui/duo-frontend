@@ -146,10 +146,14 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
   const filteredPaymentMethods = useMemo(() => paymentMethods, [paymentMethods]);
 
   const resetForm = useCallback(() => {
+    // Use expense categories by default since we set transactionType to 'expense' below
+    const otherCategory = expenseCategories.find(c => c.id === 'other' || c.name === 'Другое');
+    const defaultCategory = otherCategory ? otherCategory.name : '';
+    
     setTransactionType('expense');
     setDescription('');
     setAmount('');
-    setCategory('');
+    setCategory(defaultCategory);
     setSubCategory(undefined);
     setDate(formatISOForInput(new Date().toISOString()));
     setUser(currentUser);
@@ -174,7 +178,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
       clearTimeout(autofillTimeoutRef.current);
       autofillTimeoutRef.current = null;
     }
-  }, [currentUser, paymentMethods]);
+  }, [currentUser, paymentMethods, expenseCategories]);
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -218,11 +222,41 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
         pendingSubCategoryRef.current = null;
       }
     }
-  }, [category, categories, transactionToEdit, isEditMode]);
+
+    // Автоматически выбираем способ оплаты из паттернов, если категория выбрана и способ оплаты не установлен
+    if (category && !paymentMethodId && !hasUserEdited.paymentMethodId && recentTransactions.length > 0) {
+      const allCategoriesForPatterns = transactionType === 'expense' ? expenseCategories : incomeCategories;
+      const categoryObj = allCategoriesForPatterns.find(c => c.id === category || c.name === category);
+      const categoryName = categoryObj?.name || category;
+      
+      // Ищем паттерн из последних транзакций с такой же категорией
+      const patternTx = recentTransactions.find(rt => {
+        const rtCategoryObj = allCategoriesForPatterns.find(c => c.id === rt.category || c.name === rt.category);
+        const rtCategoryName = rtCategoryObj?.name || rt.category;
+        return rtCategoryName === categoryName && rt.amount > 0 && rt.paymentMethodId;
+      });
+      
+      if (patternTx && patternTx.paymentMethodId) {
+        const foundPaymentMethod = filteredPaymentMethods.find(pm => pm.id === patternTx.paymentMethodId);
+        if (foundPaymentMethod) {
+          console.log('Автовыбор способа оплаты из паттернов:', patternTx.paymentMethodId);
+          setPaymentMethodId(patternTx.paymentMethodId);
+        }
+      }
+    }
+  }, [category, categories, transactionToEdit, isEditMode, paymentMethodId, hasUserEdited.paymentMethodId, recentTransactions, transactionType, expenseCategories, incomeCategories, filteredPaymentMethods]);
   
   useEffect(() => {
-    if (!isEditMode) setUser(currentUser);
-  }, [currentUser, isEditMode]);
+    if (!isEditMode) {
+      setUser(currentUser);
+      // При смене типа транзакции устанавливаем категорию "Другое" по умолчанию
+      const categories = transactionType === 'expense' ? expenseCategories : incomeCategories;
+      const otherCategory = categories.find(c => c.id === 'other' || c.name === 'Другое');
+      if (otherCategory && !category) {
+        setCategory(otherCategory.name);
+      }
+    }
+  }, [currentUser, isEditMode, transactionType, expenseCategories, incomeCategories, category]);
 
   useEffect(() => {
     // Загружаем курс валют при изменении валюты
@@ -239,6 +273,22 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
       setCurrencyRate(1);
     }
   }, [currency]);
+
+  // Обработка текста "сегодня" в описании и установка текущей даты/времени
+  useEffect(() => {
+    if (!description || isEditMode) return;
+    
+    const descLower = description.toLowerCase().trim();
+    const todayKeywords = ['сегодня', 'today', 'сейчас', 'now'];
+    const hasTodayKeyword = todayKeywords.some(keyword => descLower.includes(keyword));
+    
+    if (hasTodayKeyword) {
+      // Устанавливаем текущую дату и время
+      const now = new Date();
+      setDate(formatISOForInput(now.toISOString()));
+      console.log('Обнаружен текст "сегодня", установлена текущая дата/время:', now.toISOString());
+    }
+  }, [description, isEditMode]);
 
   // Автозаполнение при изменении описания
   useEffect(() => {
@@ -364,12 +414,45 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
       if (parsedData) {
         setAmount(parsedData.amount || '');
         setCategory(categories.find(c => c.name.toLowerCase() === parsedData.category?.toLowerCase())?.name || '');
-        setDate(formatISOForInput(new Date(parsedData.date || new Date()).toISOString()));
+        
+        // Обрабатываем дату и время
+        let dateTime = new Date();
+        
+        // Если дата указана в парсе, используем её
+        if (parsedData.date) {
+          const dateParts = parsedData.date.split('-');
+          if (dateParts.length === 3) {
+            dateTime = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+          }
+        }
+        
+        // Если время указано в парсе, используем его (не fallback на текущее время)
+        if (parsedData.time && parsedData.time !== 'null' && parsedData.time.trim() !== '') {
+          const timeParts = parsedData.time.split(':');
+          if (timeParts.length >= 2) {
+            const hours = parseInt(timeParts[0]) || 0;
+            const minutes = parseInt(timeParts[1]) || 0;
+            dateTime.setHours(hours);
+            dateTime.setMinutes(minutes);
+            dateTime.setSeconds(0);
+            dateTime.setMilliseconds(0);
+            console.log('Время извлечено из чека:', parsedData.time, '->', hours + ':' + minutes);
+          }
+        } else {
+          // Если время не указано, используем текущее время как fallback
+          const now = new Date();
+          dateTime.setHours(now.getHours());
+          dateTime.setMinutes(now.getMinutes());
+          console.log('Время не найдено в чеке, используется текущее время');
+        }
+        
+        setDate(formatISOForInput(dateTime.toISOString()));
         setDescription(parsedData.description || '');
       } else {
         setParseError('Не удалось распознать чек. Пожалуйста, введите данные вручную.');
       }
     } catch (e) {
+      console.error('Ошибка при парсинге чека:', e);
       setParseError('Ошибка при обработке чека.');
     } finally {
       setIsParsing(false);

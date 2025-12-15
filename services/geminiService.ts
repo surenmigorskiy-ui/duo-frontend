@@ -7,6 +7,7 @@ interface ParsedReceipt {
   amount: number;
   category: string;
   date: string;
+  time?: string; // HH:MM
   description: string;
 }
 

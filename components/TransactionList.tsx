@@ -73,7 +73,11 @@ const TransactionItem: React.FC<{
     const isBulkTransaction = transaction.id?.startsWith('bulk-') || (transaction as any)._importTimestamp;
     
     // Определяем, требуется ли ручное редактирование категории
-    const needsCategoryReview = (transaction as any)._needsCategoryReview || !transaction.category || transaction.category === '';
+    const needsCategoryReview = (transaction as any)._needsCategoryReview || 
+                                !transaction.category || 
+                                transaction.category === '' ||
+                                transaction.category === 'needs-review' ||
+                                transaction.category === 'Требуется определить';
 
     useEffect(() => {
         const el = spoilerContentRef.current;
@@ -213,6 +217,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
     const filterPanelRef = useRef<HTMLDivElement>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [showAllCategories, setShowAllCategories] = useState(false);
+    const [showMissingCategoryOnly, setShowMissingCategoryOnly] = useState(false);
     
     const paymentMethodMap = useMemo(() => {
         return new Map(paymentMethods.map(pm => [pm.id, pm]));
@@ -294,14 +299,38 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
         setSelectedPaymentTypes([]);
         setSelectedCategories([]);
         setSelectedSubCategories([]);
+        setShowMissingCategoryOnly(false);
     };
 
-    const activeFilterCount = selectedUsers.length + selectedPaymentTypes.length + selectedCategories.length + selectedSubCategories.length;
+    const activeFilterCount = selectedUsers.length + selectedPaymentTypes.length + selectedCategories.length + selectedSubCategories.length + (showMissingCategoryOnly ? 1 : 0);
 
     const filteredTransactions = useMemo(() => {
         return sortedTransactions.filter(t => {
             if (filters.type && t.type !== filters.type) return false;
             if (selectedUsers.length > 0 && !selectedUsers.includes(t.user)) return false;
+
+            // Filter for transactions with missing/required category
+            if (showMissingCategoryOnly) {
+                // Проверяем флаг _needsCategoryReview
+                if ((t as any)._needsCategoryReview) return true;
+                
+                // Проверяем пустую категорию
+                if (!t.category || t.category.trim() === '') return true;
+                
+                // Проверяем категорию "Требуется определить" по ID или названию
+                const needsReviewCategory = allCategories.find(c => 
+                    c.id === 'needs-review' || c.name === 'Требуется определить'
+                );
+                if (needsReviewCategory) {
+                    const isNeedsReview = t.category === needsReviewCategory.id || 
+                                        t.category === needsReviewCategory.name ||
+                                        t.category === 'needs-review' ||
+                                        t.category === 'Требуется определить';
+                    if (isNeedsReview) return true;
+                }
+                
+                return false;
+            }
 
             const noCategoryFilters = selectedCategories.length === 0 && selectedSubCategories.length === 0;
             if (!noCategoryFilters) {
@@ -339,7 +368,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
 
             return true;
         });
-    }, [sortedTransactions, selectedUsers, selectedCategories, selectedSubCategories, dateFilter, customDateRange, selectedPaymentTypes, paymentMethodMap, filters.type]);
+    }, [sortedTransactions, selectedUsers, selectedCategories, selectedSubCategories, dateFilter, customDateRange, selectedPaymentTypes, paymentMethodMap, filters.type, showMissingCategoryOnly]);
     
     const { totalIncome, totalExpense } = useMemo(() => {
         return filteredTransactions.reduce((acc, tx) => {
@@ -424,7 +453,10 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                                 <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
                                     <h4 className="font-semibold text-sm mb-2">Категории</h4>
                                     <div className="space-y-1">
-                                       {(showAllCategories ? allCategories : allCategories.slice(0, 6)).map((cat, index) => (
+                                       {/* Обычные категории (исключая "Требуется определить") */}
+                                       {(showAllCategories ? allCategories : allCategories.slice(0, 6))
+                                         .filter(cat => cat.id !== 'needs-review' && cat.name !== 'Требуется определить')
+                                         .map((cat, index) => (
                                           <CategoryFilterItem 
                                             key={cat._uniqueId || `${cat._type}-${cat.id}-${index}`}
                                             category={cat}
@@ -439,9 +471,24 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, payment
                                             onClick={() => setShowAllCategories(!showAllCategories)}
                                             className="w-full text-left text-xs text-teal-500 hover:text-teal-600 dark:hover:text-teal-400 mt-2 p-1 font-medium"
                                           >
-                                            {showAllCategories ? t('transactions.hide') : t('transactions.showAll')} ({allCategories.length - 6})
+                                            {showAllCategories ? t('transactions.hide') : t('transactions.showAll')} ({allCategories.filter(cat => cat.id !== 'needs-review' && cat.name !== 'Требуется определить').length - 6})
                                           </button>
                                        )}
+                                       {/* Разделитель перед "Требуется определить" */}
+                                       <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+                                       {/* "Требуется определить" отдельно в конце */}
+                                       <label className="flex items-center space-x-2 text-sm cursor-pointer p-1">
+                                           <input 
+                                               type="checkbox" 
+                                               checked={showMissingCategoryOnly} 
+                                               onChange={() => setShowMissingCategoryOnly(!showMissingCategoryOnly)} 
+                                               className="rounded text-teal-500 focus:ring-teal-500"
+                                           />
+                                           <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                                               <i className="fas fa-exclamation-triangle mr-1"></i>
+                                               Требуется категория
+                                           </span>
+                                       </label>
                                     </div>
                                 </div>
                                 <div className="border-t border-gray-200 dark:border-gray-700 pt-3">

@@ -69,10 +69,19 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
   const [lastImportTimestamp, setLastImportTimestamp] = useState<number | null>(getLastImportTimestamp());
 
-  // Функция для нормализации даты: исправляет старые годы на текущий год
+  // Функция для нормализации даты: исправляет старые годы на текущий год и обрабатывает "сегодня"
   const normalizeDate = (dateString: string | undefined): string => {
     if (!dateString) {
       return new Date().toISOString();
+    }
+
+    // Обрабатываем "сегодня" и "today" в разных форматах
+    const dateLower = dateString.toLowerCase().trim();
+    const todayKeywords = ['сегодня', 'today', 'сейчас', 'now'];
+    if (todayKeywords.some(keyword => dateLower.includes(keyword))) {
+      const now = new Date();
+      console.log(`Обнаружен текст "сегодня" в дате: "${dateString}", устанавливаем текущую дату: ${now.toISOString()}`);
+      return now.toISOString();
     }
 
     // Если дата в формате YYYY-MM-DD
@@ -83,6 +92,16 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
       const correctedYear = year < currentYear ? currentYear : year;
       const date = new Date(correctedYear, month - 1, day, 12, 0, 0);
       return date.toISOString();
+    }
+
+    // Пробуем распарсить дату в формате DD.MM.YYYY или DD/MM/YYYY
+    const ddmmyyyyMatch = dateString.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})$/);
+    if (ddmmyyyyMatch) {
+      const [, day, month, year] = ddmmyyyyMatch.map(Number);
+      const date = new Date(year, month - 1, day, 12, 0, 0);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
+      }
     }
 
     // Для других форматов тоже проверяем год
@@ -97,6 +116,7 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
     }
 
     // Если не удалось распарсить, возвращаем текущую дату
+    console.warn(`Не удалось распарсить дату: "${dateString}", используем текущую дату`);
     return new Date().toISOString();
   };
 
@@ -363,14 +383,14 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
             c.name === tx.category
           );
           
-          // Если категория не определена или не найдена, помечаем транзакцию для ручного редактирования
-          if (isCategoryUnknown || !categoryObj) {
-            if (isCategoryUnknown) {
-              console.log(`Категория не определена для транзакции: ${tx.description} - ${tx.amount}`);
-            } else {
-              console.warn(`Категория "${tx.category}" не найдена для транзакции: ${tx.description}`);
-            }
-            // Не устанавливаем категорию - оставляем пустой или используем специальный маркер
+          // Обновляем isCategoryUnknown если categoryObj не найден
+          if (!categoryObj && !isCategoryUnknown) {
+            isCategoryUnknown = true;
+            console.warn(`Категория "${tx.category}" не найдена для транзакции: ${tx.description}`);
+          }
+          
+          if (isCategoryUnknown) {
+            console.log(`Категория не определена для транзакции: ${tx.description} - ${tx.amount}`);
             categoryObj = undefined;
           }
 
@@ -436,19 +456,51 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
           const userName = typeof userObj === 'object' && userObj?.name ? userObj.name : (currentUser?.name || currentUser?.id || currentUser || 'shared');
           
           // Если категория не определена, помечаем транзакцию для ручного редактирования
+          // КРИТИЧЕСКИ ВАЖНО: needsCategoryReview должен быть true если isCategoryUnknown ИЛИ categoryObj не найден
           const needsCategoryReview = isCategoryUnknown || !categoryObj;
           
           // Находим категорию "Требуется определить" для транзакций с неопределенной категорией
           const needsReviewCategory = allCategories.find(c => c.id === 'needs-review' || c.name === 'Требуется определить');
           const needsReviewSubCategory = needsReviewCategory?.subCategories?.find(sc => sc.id === 'needs-review' || sc.name === 'Требуется определить');
           
+          // КРИТИЧЕСКИ ВАЖНО: Если категория не определена, ВСЕГДА используем "Требуется определить", НЕ fallback на первую категорию
+          // Используем НАЗВАНИЕ категории из списка, а не только ID
+          let finalCategory: string;
+          let finalSubCategory: string | undefined;
+          
+          if (needsCategoryReview) {
+            // Если категория не определена, ВСЕГДА используем "Требуется определить"
+            if (needsReviewCategory) {
+              // Используем название категории из списка, чтобы оно отображалось правильно
+              finalCategory = needsReviewCategory.name;
+              // Используем название подкатегории из списка
+              if (needsReviewSubCategory) {
+                finalSubCategory = needsReviewSubCategory.name;
+              }
+              console.log(`Назначаем категорию "Требуется определить" (${needsReviewCategory.name}) для транзакции: ${finalDescription}`);
+            } else {
+              // Если категория "Требуется определить" не найдена в списке, используем название напрямую
+              finalCategory = 'Требуется определить';
+              finalSubCategory = 'Требуется определить';
+              console.warn(`Категория "Требуется определить" не найдена в списке категорий, используем название напрямую`);
+            }
+          } else if (categoryObj) {
+            // Если категория определена и найдена, используем её название
+            finalCategory = categoryObj.name;
+            finalSubCategory = subCategory || undefined;
+          } else {
+            // Fallback: если ничего не найдено, используем "Требуется определить"
+            finalCategory = needsReviewCategory?.name || 'Требуется определить';
+            finalSubCategory = needsReviewSubCategory?.name || 'Требуется определить';
+            console.warn(`Fallback: используем категорию "Требуется определить" для транзакции: ${finalDescription}`);
+          }
+          
           return {
             id: `bulk-${Date.now()}-${index}`,
             description: finalDescription,
             amount: parseFloat(tx.amount) || 0,
-            // КРИТИЧЕСКИ ВАЖНО: Если категория не определена (isCategoryUnknown), ВСЕГДА используем "Требуется определить"
-            category: needsCategoryReview && needsReviewCategory ? needsReviewCategory.id : (categoryObj?.id || expenseCategories[0]?.id || 'other'),
-            subCategory: needsCategoryReview && needsReviewSubCategory ? needsReviewSubCategory.name : (subCategory || undefined),
+            category: finalCategory,
+            subCategory: finalSubCategory,
             date: dateISO,
             user: userName as User,
             type: (tx.type || 'expense') as 'expense' | 'income',
@@ -685,14 +737,14 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
             c.name === tx.category
           );
           
-          // Если категория не определена или не найдена, помечаем транзакцию для ручного редактирования
-          if (isCategoryUnknown || !categoryObj) {
-            if (isCategoryUnknown) {
-              console.log(`Категория не определена для транзакции: ${tx.description} - ${tx.amount}`);
-            } else {
-              console.warn(`Категория "${tx.category}" не найдена для транзакции: ${tx.description}`);
-            }
-            // Не устанавливаем категорию - оставляем пустой или используем специальный маркер
+          // Обновляем isCategoryUnknown если categoryObj не найден
+          if (!categoryObj && !isCategoryUnknown) {
+            isCategoryUnknown = true;
+            console.warn(`Категория "${tx.category}" не найдена для транзакции: ${tx.description}`);
+          }
+          
+          if (isCategoryUnknown) {
+            console.log(`Категория не определена для транзакции: ${tx.description} - ${tx.amount}`);
             categoryObj = undefined;
           }
 
@@ -736,6 +788,7 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
           const finalDescription = tx.description;
           
           // Если категория не определена, помечаем транзакцию для ручного редактирования
+          // КРИТИЧЕСКИ ВАЖНО: needsCategoryReview должен быть true если isCategoryUnknown ИЛИ categoryObj не найден
           const needsCategoryReview = isCategoryUnknown || !categoryObj;
           
           // Находим категорию "Требуется определить" для транзакций с неопределенной категорией
@@ -746,13 +799,44 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({
           const userObj = userDetails?.[currentUser?.id || currentUser?.name || currentUser || ''];
           const userName = typeof userObj === 'object' && userObj?.name ? userObj.name : (currentUser?.name || currentUser?.id || currentUser || 'shared');
           
+          // КРИТИЧЕСКИ ВАЖНО: Если категория не определена, ВСЕГДА используем "Требуется определить", НЕ fallback на первую категорию
+          // Используем НАЗВАНИЕ категории из списка, а не только ID
+          let finalCategory: string;
+          let finalSubCategory: string | undefined;
+          
+          if (needsCategoryReview) {
+            // Если категория не определена, ВСЕГДА используем "Требуется определить"
+            if (needsReviewCategory) {
+              // Используем название категории из списка, чтобы оно отображалось правильно
+              finalCategory = needsReviewCategory.name;
+              // Используем название подкатегории из списка
+              if (needsReviewSubCategory) {
+                finalSubCategory = needsReviewSubCategory.name;
+              }
+              console.log(`Назначаем категорию "Требуется определить" (${needsReviewCategory.name}) для транзакции: ${finalDescription}`);
+            } else {
+              // Если категория "Требуется определить" не найдена в списке, используем название напрямую
+              finalCategory = 'Требуется определить';
+              finalSubCategory = 'Требуется определить';
+              console.warn(`Категория "Требуется определить" не найдена в списке категорий, используем название напрямую`);
+            }
+          } else if (categoryObj) {
+            // Если категория определена и найдена, используем её название
+            finalCategory = categoryObj.name;
+            finalSubCategory = subCategory || undefined;
+          } else {
+            // Fallback: если ничего не найдено, используем "Требуется определить"
+            finalCategory = needsReviewCategory?.name || 'Требуется определить';
+            finalSubCategory = needsReviewSubCategory?.name || 'Требуется определить';
+            console.warn(`Fallback: используем категорию "Требуется определить" для транзакции: ${finalDescription}`);
+          }
+          
           return {
             id: `bulk-${Date.now()}-${index}`,
             description: finalDescription,
             amount: parseFloat(tx.amount) || 0,
-            // Если категория не определена, используем категорию "Требуется определить"
-            category: categoryObj?.id || (needsCategoryReview && needsReviewCategory ? needsReviewCategory.id : expenseCategories[0]?.id || 'other'),
-            subCategory: needsCategoryReview && needsReviewSubCategory ? needsReviewSubCategory.name : (subCategory || undefined),
+            category: finalCategory,
+            subCategory: finalSubCategory,
             date: dateISO,
             user: userName as User,
             type: (tx.type || 'expense') as 'expense' | 'income',
