@@ -73,18 +73,20 @@ const TransactionItem: React.FC<{
     const isBulkTransaction = transaction.id?.startsWith('bulk-') || (transaction as any)._importTimestamp;
     
     // Определяем, требуется ли ручное редактирование категории
-    // Проверяем флаг _needsCategoryReview
-    const hasNeedsReviewFlag = (transaction as any)._needsCategoryReview === true;
-    
     // Проверяем, является ли категория "Требуется определить" или пустой
     const isNeedsReviewCategory = !transaction.category || 
                                   transaction.category === '' ||
                                   transaction.category === 'needs-review' ||
                                   transaction.category === 'Требуется определить';
     
-    // Транзакция нуждается в категории только если есть флаг ИЛИ категория "Требуется определить"
-    // Если выбрана нормальная категория (например, "Еда"), то не нуждается в категории
-    const needsCategoryReview = hasNeedsReviewFlag && isNeedsReviewCategory;
+    // Проверяем флаг _needsCategoryReview, но только если категория действительно "Требуется определить"
+    // Если выбрана нормальная категория (например, "Еда"), то флаг игнорируется
+    const hasNeedsReviewFlag = (transaction as any)._needsCategoryReview === true;
+    
+    // Транзакция нуждается в категории если:
+    // 1. Категория "Требуется определить" или пустая ИЛИ
+    // 2. Есть флаг _needsCategoryReview И категория все еще "Требуется определить"
+    const needsCategoryReview = isNeedsReviewCategory || (hasNeedsReviewFlag && isNeedsReviewCategory);
 
     useEffect(() => {
         const el = spoilerContentRef.current;
